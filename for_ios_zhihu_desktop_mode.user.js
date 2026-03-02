@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  支持全站(首页、问题页等)宽度自适应，隐藏右边栏，搜索框占位符隐藏，悬浮按钮切换导航。
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -54,12 +54,19 @@
         button[aria-label="收藏"],
         button[aria-label="喜欢"],
         button[aria-label="更多"],
+        button[data-tooltip="解释这篇内容"],
+        #TopstoryContent > div  span.RichContent-collapsedText,
         nav.AppHeader-nav,
         .AppHeader-profile,
         .AppHeader-options,
         #root > div > main > div > div.Topstory-container > div.Topstory-mainColumn > div.WriteArea,
         #root > div > div[class*="css-"] > header > div > div[class*="css-"] > div[class*="css-"] > nav {
             display: none !important;
+        }
+
+        .ContentItem-action{
+        margin-left:12px!important;
+
         }
 
         /* --- 修正作者信息勋章超出 body 的问题 --- */
