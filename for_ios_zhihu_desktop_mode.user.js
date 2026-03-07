@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  支持全站(首页、问题页等)宽度自适应，隐藏右边栏，搜索框占位符隐藏，悬浮按钮切换导航。
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -70,7 +70,54 @@ padding-left:20px;
         padding-left:20px;
         }
 
+        /*搜索页*/
+        .RichContent.is-collapsed .RichContent-inner{
+        max-height:100%!important;
+        }
+        .RichContent-inner,
+        .ContentItem-title{
+        padding:0 10px;
+        margin-bottom:10px;
+        }
+        .RichContent-cover,
+        .HotLanding-contentItemCountWithoutSub
+        {
+        padding-left:10px;
+        }
+        .HotLanding-title{
+         padding:10px;
+        }
+.List-item{
+padding:0px!important;
+margin-bottom:10px!important;
+}
+.RichContent-cover-inner.RichContent-cover--normal{
+left:auto!important;
+}
+.ContentItem-actions{
+padding:0px!important;
+margin:0!important;
+}
+
+.HotLanding-content{
+padding-left:0px!important;
+}
+.RichContent-cover{
+width:100px!important;
+}
+        .Card.SearchResult-Card{
+        margin-bottom:0!important;
+        width:100%;
+        }
+
+        .Card.SearchResult-Card>.List-item,
+        #SearchMain{
+        width:100%!important;
+        }
+
         /* 内容列占据全部宽度 */
+        .App-main,
+        div[style="opacity: 1; transform: none;"],
 .QuestionHeader-footer-inner,
         .Topstory-mainColumn,
         .Question-mainColumn,
@@ -83,6 +130,10 @@ padding-left:20px;
         }
 
         /* --- 导航栏元素清理 --- */
+        .HotLanding-ListTitle,
+        .SearchTabs,
+        #root > div > main > div > div.Search-container > div[class*="css-"],
+        body > div > div > div > div[style="opacity: 1; transform: none;"] > div > div > div > div:nth-child(3),
         #root div.QuestionHeader-footer div.QuestionHeaderActions > button,
         #root div.QuestionHeader-footer div.QuestionButtonGroup > button:nth-child(2),
         .GoodQuestionAction,
