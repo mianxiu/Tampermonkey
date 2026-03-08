@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      1.10
 // @description  支持全站(首页、问题页等)宽度自适应，隐藏右边栏，搜索框占位符隐藏，悬浮按钮切换导航。
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -17,6 +17,10 @@
 
     // 1. 核心布局 CSS
     const baseCss = `
+
+        body{
+        background:white!important;
+        }
         /* --- 全局宽度自适应与去侧边栏 --- */
         /* 隐藏首页、问题页、搜索页侧边栏 */
         .GlobalSideBar,
@@ -71,12 +75,14 @@ padding-left:20px;
         }
 
         /*搜索页*/
+        .Card{
+        box-shadow:none!important;
+        }
         .RichContent.is-collapsed .RichContent-inner{
         max-height:100%!important;
         }
         .RichContent-inner,
         .ContentItem-title{
-        padding:0 10px;
         margin-bottom:10px;
         }
         .RichContent-cover,
@@ -87,9 +93,15 @@ padding-left:20px;
         .HotLanding-title{
          padding:10px;
         }
+        .List{
+        padding:20px;
+        }
+        .ContentItem-time{
+        margin-bottom:10px;
+        }
 .List-item{
 padding:0px!important;
-margin-bottom:10px!important;
+margin-bottom:20px!important;
 }
 .RichContent-cover-inner.RichContent-cover--normal{
 left:auto!important;
@@ -98,8 +110,11 @@ left:auto!important;
 padding:0px!important;
 margin:0!important;
 }
-
+.HotLanding-contentItem:not(:last-child){
+padding-bottom:5px!important;
+}
 .HotLanding-content{
+border:none!important;
 padding-left:0px!important;
 }
 .RichContent-cover{
@@ -170,6 +185,10 @@ width:100px!important;
             max-width: 100% !important;
             box-sizing: border-box !important;
             overflow: hidden !important; /* 防止内容溢出 */
+
+        }
+        .AnswerItem-authorInfo{
+        padding:10px 0px;
         }
 
         .AuthorInfo-badge {
