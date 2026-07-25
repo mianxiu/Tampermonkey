@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.18
-// @description  桌面版网页适配手机宽度，隐藏无关元素，轻量高性能（修复双滚动条/热榜封面重叠，强制 viewport）
+// @version      1.20
+// @description  桌面版网页适配手机宽度，隐藏无关元素。真机可视化诊断面板（双击悬浮按钮），无需 Mac
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -240,6 +240,45 @@ white-space:nowrap!important;
 .HotItem-content{
 padding-bottom:0!important;
 }
+
+/* --- 答案/问题正文防溢出 & SPA flex 容器收缩 --- */
+/* flex 子元素默认 min-width:auto 阻止收缩，改为 0 允许内容适配视口 */
+.Question-mainColumn,
+.Topstory-mainColumn,
+.SearchResult-main,
+.SearchMain,
+.Question-main {
+    min-width: 0 !important;
+}
+/* 正文内容强制换行，防止 pre/code/长链接撑破容器 */
+.RichContent,
+.QuestionRichText,
+.AnswerItem-content,
+[class*="AnswerItem"] {
+    overflow-wrap: break-word !important;
+    word-wrap: break-word !important;
+    min-width: 0 !important;
+}
+.RichContent pre,
+.RichContent code,
+.QuestionRichText pre,
+.QuestionRichText code {
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    max-width: 100% !important;
+}
+.RichContent table,
+.QuestionRichText table {
+    display: block !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+}
+/* 答案项本身也要允许收缩 */
+.AnswerItem,
+.ContentItem {
+    min-width: 0 !important;
+    max-width: 100% !important;
+}
         .Card.SearchResult-Card{
         margin-bottom:0!important;
         width:100%;
@@ -474,21 +513,10 @@ padding-bottom:0!important;
         applyHeaderDisplay();
     });
 
-    // 真机诊断：双击悬浮按钮，弹出真实布局尺寸。
-    // 若 innerWidth 远大于屏幕宽度（如 ~980），说明是 iOS "请求桌面网站" 强制宽布局视口导致的挤压。
+    // 真机诊断：双击悬浮按钮，直接在当前页面显示诊断面板（无需外接 Mac/Safari）
     btn.addEventListener('dblclick', (e) => {
         e.preventDefault();
-        const de = document.documentElement;
-        const vp = document.querySelector('meta[name="viewport"]');
-        alert(
-            'window.innerWidth = ' + window.innerWidth + '\n' +
-            'documentElement.clientWidth = ' + de.clientWidth + '\n' +
-            'documentElement.scrollWidth = ' + de.scrollWidth + '\n' +
-            'screen.width = ' + screen.width + '\n' +
-            'devicePixelRatio = ' + window.devicePixelRatio + '\n' +
-            'visualViewport.width = ' + (window.visualViewport ? Math.round(window.visualViewport.width) : 'n/a') + '\n' +
-            'viewport meta = ' + (vp ? vp.getAttribute('content') : '（无）')
-        );
+        showDiagnosticPanel();
     });
 
     // 初始化执行
@@ -508,7 +536,106 @@ padding-bottom:0!important;
         init();
     }
 
-    // 5. MutationObserver + 防抖（解决 SPA 跳转）
+    // 5. 溢出诊断（真机可视化：双击悬浮按钮显示面板，也暴露到 window）
+    const showDiagnosticPanel = () => {
+        // 如果面板已存在，切换显示
+        const existing = document.getElementById('zhihu-diag-panel');
+        if (existing) {
+            existing.style.display = existing.style.display === 'none' ? 'block' : 'none';
+            return;
+        }
+
+        const vw = window.innerWidth;
+        const de = document.documentElement;
+        const vp = document.querySelector('meta[name="viewport"]');
+
+        // 扫描溢出元素
+        const found = [];
+        for (const el of document.querySelectorAll('*')) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 50 && r.right > vw + 1) {
+                const s = getComputedStyle(el);
+                found.push({
+                    el,
+                    sel: el.tagName.toLowerCase()
+                        + (el.id ? '#' + el.id : '')
+                        + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.') : ''),
+                    w: Math.round(r.width), r: Math.round(r.right), l: Math.round(r.left),
+                    mw: s.minWidth, ow: s.overflowWrap, ws: s.whiteSpace.slice(0, 10), pos: s.position,
+                });
+            }
+        }
+        found.sort((a, b) => b.r - a.r);
+
+        // 构建面板 HTML
+        let html = '<div style="padding:10px 12px;font-size:11px;background:#333;color:#eee;position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;">';
+        html += '<div><b>视图信息</b></div>';
+        html += '<div style="cursor:pointer;font-size:14px;color:#f66;padding:0 6px;" onclick="document.getElementById(\'zhihu-diag-panel\').remove()">✕</div>';
+        html += '</div>';
+
+        html += '<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace;">';
+        html += '<tr style="background:#222;"><td style="padding:4px 6px;">innerWidth</td><td style="padding:4px 6px;">' + vw + '</td></tr>';
+        html += '<tr><td style="padding:4px 6px;">scrollWidth</td><td style="padding:4px 6px;">' + de.scrollWidth + (de.scrollWidth > vw ? ' ⚠️溢出' : ' ✅') + '</td></tr>';
+        html += '<tr style="background:#222;"><td style="padding:4px 6px;">screen.width</td><td style="padding:4px 6px;">' + screen.width + ' (dpr:' + window.devicePixelRatio + ')</td></tr>';
+        html += '<tr><td style="padding:4px 6px;">visualViewport</td><td style="padding:4px 6px;">' + (window.visualViewport ? Math.round(window.visualViewport.width) : 'n/a') + '</td></tr>';
+        html += '<tr style="background:#222;"><td style="padding:4px 6px;">viewport meta</td><td style="padding:4px 6px;">' + (vp ? vp.getAttribute('content') : '（无）') + '</td></tr>';
+        html += '<tr><td style="padding:4px 6px;">hasRoot</td><td style="padding:4px 6px;">' + !!document.getElementById('root') + '</td></tr>';
+        html += '</table>';
+
+        html += '<div style="padding:10px 12px;font-size:11px;background:#333;color:#eee;position:sticky;top:30px;z-index:2;">';
+        html += '<b>溢出元素 (' + found.length + ' 个)</b> — 按超出程度排序';
+        html += '</div>';
+
+        if (found.length === 0) {
+            html += '<div style="padding:20px;color:#0f0;text-align:center;font-size:13px;">✅ 没有元素超出视口宽度</div>';
+        } else {
+            html += '<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:monospace;table-layout:fixed;">';
+            html += '<thead style="background:#222;position:sticky;top:60px;z-index:1;">';
+            html += '<tr><th style="text-align:left;padding:3px 4px;width:5%;">#</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:35%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">选择器</th>';
+            html += '<th style="text-align:right;padding:3px 4px;width:10%;">宽度</th>';
+            html += '<th style="text-align:right;padding:3px 4px;width:10%;">超出</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:15%;">minW/ow/ws</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:10%;">pos</th>';
+            html += '</tr></thead><tbody>';
+
+            for (let i = 0; i < Math.min(found.length, 40); i++) {
+                const f = found[i];
+                const over = f.r - vw;
+                const bg = i % 2 === 0 ? '#1a1a1a' : '#111';
+                const color = over > 100 ? '#f66' : over > 30 ? '#fa0' : '#ff6';
+                html += '<tr style="background:' + bg + ';">';
+                html += '<td style="padding:2px 4px;color:' + color + ';">' + (i + 1) + '</td>';
+                html += '<td style="padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaf;" title="' + f.sel.replace(/"/g, '&quot;') + '">' + f.sel + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;">' + f.w + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;color:' + color + ';font-weight:bold;">+' + over + '</td>';
+                html += '<td style="padding:2px 4px;font-size:8px;">' + f.mw + '/' + f.ow + '/' + f.ws + '</td>';
+                html += '<td style="padding:2px 4px;font-size:8px;">' + f.pos + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            if (found.length > 40) {
+                html += '<div style="padding:6px;color:#888;text-align:center;font-size:10px;">...还有 ' + (found.length - 40) + ' 个溢出元素未显示（仅列出前 40 个）</div>';
+            }
+        }
+
+        // 创建面板
+        const panel = document.createElement('div');
+        panel.id = 'zhihu-diag-panel';
+        panel.innerHTML = html;
+        panel.style.cssText = 'position:fixed;top:10px;left:5px;right:5px;bottom:10px;background:#0a0a0a;color:#ccc;z-index:2147483646;border-radius:8px;overflow:auto;-webkit-overflow-scrolling:touch;font-size:11px;box-shadow:0 0 40px rgba(0,0,0,0.9);border:1px solid #444;';
+        document.body.appendChild(panel);
+
+        // 支持从页面内关闭（点 × 或双击按钮再次切换）
+        panel.addEventListener('click', (ev) => {
+            if (ev.target === panel) { panel.style.display = 'none'; }
+        });
+    };
+
+    // 也保留 console 路径（用于远程调试或自动化）
+    window.__diagnoseOverflow = showDiagnosticPanel;
+
+    // 6. MutationObserver + 防抖（解决 SPA 跳转）
     let debounceTimer;
     const observer = new MutationObserver(() => {
         clearTimeout(debounceTimer);
