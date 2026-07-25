@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.10
-// @description  支持全站(首页、问题页等)宽度自适应，隐藏右边栏，搜索框占位符隐藏，悬浮按钮切换导航。
+// @version      1.15
+// @description  桌面UA伪装+全站宽度适配，隐藏干扰元素，防抖+轮询应对SPA切换
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -17,6 +17,42 @@
 
     // 1. 核心布局 CSS
     const baseCss = `
+
+        /* --- 全局防溢出基础 --- */
+        html, body, #root {
+            overflow-x: hidden !important;
+            max-width: 100% !important;
+        }
+        *, *::before, *::after {
+            box-sizing: border-box !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+        }
+
+        /* 核弹：所有容器 overflow:hidden 切断溢出 + 限制最大宽度 */
+        div, section, article, main, header, footer, nav, aside,
+        form, table, ul, ol, li, p, figure, blockquote, pre,
+        h1, h2, h3, h4, h5, h6, span, a, strong, em, label, button {
+            max-width: 100% !important;
+            overflow-x: hidden !important;
+            white-space: normal !important;
+        }
+        /* 例外：仅绝对/固定定位的弹窗不限制（position:absolute/fixed 不影响 scrollWidth）*/
+        [class*="MuiMenu"], [class*="MuiDialog"], [class*="MuiTooltip"],
+        [class*="MuiPopover"], [class*="MuiSelect"] {
+            max-width: none !important;
+            overflow-x: visible !important;
+        }
+        /* 需要保留 nowrap 的元素 */
+        .AuthorInfo-badgeText, .AuthorInfo-badge {
+            white-space: nowrap !important;
+        }
+
+        /* 所有媒体元素限制最大宽度 */
+        img, svg, video, iframe, canvas, figure {
+            max-width: 100% !important;
+            height: auto !important;
+        }
 
         body{
         background:white!important;
@@ -72,6 +108,46 @@ padding-left:20px;
         .QuestionRichText--expandable.QuestionRichText--collapsed{
         max-height:100%!important;
         padding-left:20px;
+        }
+
+        /* --- 发现页(Explore)宽度修复 --- */
+        .ExploreHomePage,
+        .ExploreHomePage-square,
+        #guestSquare,
+        #special,
+        .ExploreHomePage-ContentSection,
+        .ExploreHomePage-ContentSection-header,
+        .ExploreHomePage-ContentSection-body,
+        .ExploreHomePage-ContentSection-moreButton,
+        .ExploreRoundtableCard,
+        .ExploreRoundtableCard-questionItem,
+        .ExploreRoundtableCard-questionTitle,
+        .ExploreRoundtableCard-questionCounts,
+        .ExploreRoundtableCard-headerBackgrounds,
+        .ExploreSpecialCard,
+        .ExploreSpecialCard-banner,
+        .ExploreSpecialCard-contentItem,
+        .ExploreSpecialCard-contentTitle,
+        .ExploreSpecialCard-header,
+        .ExploreCollectionCard,
+        .ExploreCollectionCard-contentItem,
+        .ExploreCollectionCard-contentTitle,
+        .ExploreCollectionCard-contentExcerpt,
+        .ExploreCollectionCard-contentTags,
+        .ExploreFollowButton,
+        .ExploreHeader,
+        .ExploreColumnCard,
+        .ExploreColumnCard-avatar,
+        .ExploreColumnCard-title,
+        .ExploreColumnCard-count,
+        .ExploreColumnCard-intro,
+        .ExploreColumnCard-entryButton,
+        .ExploreSpecialCard-followButton {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: auto !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
         }
 
         /*搜索页*/
@@ -132,6 +208,7 @@ width:100px!important;
 
         /* 内容列占据全部宽度 */
         .App-main,
+        .AppHeader,
         div[style="opacity: 1; transform: none;"],
 .QuestionHeader-footer-inner,
         .Topstory-mainColumn,
@@ -144,30 +221,53 @@ width:100px!important;
             margin: 0 !important;
         }
 
-        /* --- 导航栏元素清理 --- */
-        .HotLanding-ListTitle,
-        .SearchTabs,
-        #root > div > main > div > div.Search-container > div[class*="css-"],
-        body > div > div > div > div[style="opacity: 1; transform: none;"] > div > div > div > div:nth-child(3),
-        #root div.QuestionHeader-footer div.QuestionHeaderActions > button,
-        #root div.QuestionHeader-footer div.QuestionButtonGroup > button:nth-child(2),
-        .GoodQuestionAction,
-        .QuestionHeader-Comment,
-        .RichContent-collapsedText,
-        .QuestionHeader-side,
-        #TopstoryContent button.Button.FollowButton,
-        a[aria-label="知乎"],
-        button[aria-label="收藏"],
-        button[aria-label="喜欢"],
-        button[aria-label="更多"],
+        /* --- 隐藏无关元素 --- */
+        /* Header 相关 */
+        header.AppHeader,
+        header.AppHeader *,
+        header[role="banner"],
+        header[role="banner"] *,
+        .AppHeader,
+        .AppHeader *,
+        /* 导航栏 */
+        .AppHeader-nav, .AppHeader-tabs, .AppHeader-profile, .AppHeader-options,
+        .AppHeader-inner, .AppHeader-title,
+        nav[class*="AppHeader"], div[class*="AppHeader"],
+        /* 写回答/文章按钮 */
+        .WriteArea, .WriteArea-btn,
+        [class*="WriteArea"],
+        /* 侧边栏 */
+        .GlobalSideBar, .GlobalSideBar *,
+        .Question-sideColumn, .Question-sideColumn *,
+        [class*="SideBar"], [class*="Sidebar"],
+        div[data-za-detail-view-path-module="RightSideBar"],
+        /* 关注/收藏/喜欢/更多按钮 */
+        button[aria-label="关注"], button[aria-label="收藏"],
+        button[aria-label="喜欢"], button[aria-label="更多"],
+        button[aria-label="分享"], button[aria-label="举报"],
         button[data-tooltip="解释这篇内容"],
-        #TopstoryContent > div  span.RichContent-collapsedText,
-        nav.AppHeader-nav,
-        .AppHeader-profile,
-        .AppHeader-options,
-        #root > div > main > div > div.Topstory-container > div.Topstory-mainColumn > div.WriteArea,
-        #root > div > div[class*="css-"] > header > div > div[class*="css-"] > div[class*="css-"] > nav {
-            display: none !important;
+        /* 问题页无关 */
+        .GoodQuestionAction, .QuestionHeader-Comment,
+        .QuestionHeader-side, .QuestionHeader-footer>*:not(.QuestionHeader-footer-inner),
+        #root .QuestionHeader-footer button,
+        /* 热榜无关 */
+        .HotLanding-ListTitle, .HotLanding-contentItemCountWithoutSub,
+        .HotLanding-contentItem:not(:last-child),
+        /* 搜索页无关 */
+        .SearchTabs, .SearchTabs-link,
+        /* Link card 等 */
+        [class*="RichContent-collapsedText"],
+        [class*="OpenInApp"], [class*="open-in-app"],
+        [class*="AppBanner"], [class*="app-banner"],
+        [class*="DownloadApp"], [class*="download-app"],
+        /* 底部推荐/广告 */
+        [class*="RelatedCommodity"], [class*="Advert"],
+        [class*="CardLink"], [class*="GoodsCard"],
+        /* 运营位 */
+        [class*="Operation"], [class*="Banner"], [class*="Promotion"],
+        /* 保留点赞/评论/收藏等基本操作 */
+        .ContentItem-action {
+            display: inline-flex !important;
         }
 
         .ContentItem-action{
@@ -196,6 +296,19 @@ width:100px!important;
             align-items: center;
             white-space: nowrap; /* 强制不换行，配合 ellipsis 使用 */
             text-overflow: ellipsis; /* 超出部分显示省略号 */
+        }
+
+        /* 作者名、用户链接等 span 溢出修复 */
+        .AuthorInfo-name,
+        .UserLink,
+        .UserLink-link,
+        [class*="AuthorInfo"] span {
+            display: inline-block !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            vertical-align: middle !important;
         }
 
         /* 针对勋章内部文字的限制 */
@@ -271,14 +384,16 @@ width:100px!important;
         }
     }
 
-    // 3. 注入 CSS
+    // 3. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
     const injectCss = () => {
-        if (!document.getElementById('custom-layout-css')) {
-            const style = document.createElement('style');
-            style.id = 'custom-layout-css';
-            style.textContent = baseCss;
-            (document.head || document.documentElement).appendChild(style);
-        }
+        // 先移除旧的（可能已被 SPA 清理但残留）
+        const old = document.getElementById('custom-layout-css');
+        if (old) old.remove();
+
+        const style = document.createElement('style');
+        style.id = 'custom-layout-css';
+        style.textContent = baseCss;
+        (document.head || document.documentElement).appendChild(style);
     };
 
     // 4. 创建按钮
@@ -289,13 +404,18 @@ width:100px!important;
     btn.addEventListener('click', (e) => {
         e.preventDefault();
         isHeaderHidden = !isHeaderHidden;
-        btn.innerHTML = isHeaderHidden ? '' : '💊';
+        btn.innerHTML = isHeaderHidden ? '💊' : 'H';
         btn.style.background = isHeaderHidden ? '#8590a6' : '#0084ff';
         applyHeaderDisplay();
     });
 
-    // 初始化执行
+    // 初始化执行（document-start 时可能还没有 head，先注入到 documentElement）
     injectCss();
+
+    // DOM 就绪后立即重新注入到 head（保证在 <head> 中优先于页面 CSS）
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => injectCss());
+    }
 
     const init = () => {
         if (!document.body.contains(btn)) {
@@ -310,13 +430,17 @@ width:100px!important;
         init();
     }
 
-    // 5. 持续监听（解决 SPA 跳转和动态 Placeholder）
+    // 5. MutationObserver + 防抖（解决 SPA 跳转）
+    let debounceTimer;
     const observer = new MutationObserver(() => {
-        injectCss();
-        applyHeaderDisplay();
-        if (document.body && !document.body.contains(btn)) {
-            document.body.appendChild(btn);
-        }
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            injectCss();
+            applyHeaderDisplay();
+            if (document.body && !document.body.contains(btn)) {
+                document.body.appendChild(btn);
+            }
+        }, 30);
     });
 
     observer.observe(document.documentElement, {
@@ -325,5 +449,14 @@ width:100px!important;
         attributes: true,
         attributeFilter: ['style', 'placeholder']
     });
+
+    // 6. 轮询兜底（每 500ms 确保 CSS 和 Header 状态正确）
+    setInterval(() => {
+        injectCss();
+        applyHeaderDisplay();
+        if (document.body && !document.body.contains(btn)) {
+            document.body.appendChild(btn);
+        }
+    }, 500);
 
 })();
