@@ -71,7 +71,8 @@ node test/zhihu-test.js --spa --video  # 录屏
 
 ## 版本历史
 
-- v1.22：修复答案页横向溢出（JSON 诊断定位`div.css-1gl8cva`等 CSS-in-JS hash wrapper 有 1032px 固定宽度+负 margin，脚本现有选择器无法命中 → 加 `#root>div>div` 结构选择器强制 max-width:100%）
+- v1.23：放弃 CSS 选择器对抗 hash class，改为 JS 端 `fixOverflowingContainers()` — 扫描所有 div/section/header 等块级元素，`rect.right > viewport` 的直接 `style.setProperty('max-width', ...)` 强制限制
+- v1.22：JSON 诊断定位 `div.css-1gl8cva` 1032px 固定宽度+margin-right:-630px → 加 `#root>div>div` 结构选择器（但 DOM 层级更深，未命中）
 - v1.21：诊断面板支持可视化面板内下载 JSON/TXT + 一键复制，不依赖 Mac/Safari 远程调试
 - v1.20：真机可视化诊断面板（双击悬浮按钮），无需 Mac
 - v1.18：修复双滚动条（overflow-x:clip）、热榜封面图重叠（固定尺寸+object-fit）、强制 viewport meta + 真机双击诊断按钮

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.22
-// @description  桌面版网页适配手机宽度。修复答案页 CSS-in-JS 容器宽度溢出（结构选择器拦截 hash class wrapper）
+// @version      1.23
+// @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -54,23 +54,9 @@
         /* ════════════════════════════════════════════════════════ */
         /*  拦截 CSS-in-JS 布局容器（知乎新架构生成的 hash class wrapper） */
         /*  这些 div 有固定宽度（1000px~1175px）、负 margin 等桌面版设置， */
-        /*  由于 class 名是动态 hash，无法用类名精准选择。 */
-        /*  用 #root 子级结构选择器，仅匹配最多 5-10 个元素，不影响性能。*/
+        /*  由于 class 名是动态 hash 且 DOM 层级不可预测，CSS 选择器无法命中。 */
+        /*  改为 JS 端扫描修复（见 fixOverflowingContainers 函数）。 */
         /* ════════════════════════════════════════════════════════ */
-        #root > div > div {
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 0 !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-            box-sizing: border-box !important;
-        }
-        #root > div > div > div {
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 0 !important;
-            box-sizing: border-box !important;
-        }
 
         /* 隐藏首页、问题页、搜索页侧边栏 */
         .GlobalSideBar,
@@ -495,7 +481,49 @@ padding-bottom:0!important;
         }
     }
 
-    // 3. 强制 viewport meta：让布局视口 = 设备宽度，配合 CSS 的 width:100%
+    // 3b. JS 端修复：扫描所有 right > viewport 的块级元素，强制限制到视口内
+    //      专治 CSS-in-JS hash class wrapper（css-1gl8cva 等）——DOM 层级不可预测，CSS 选择器无法命中
+    const fixOverflowingContainers = () => {
+        const vw = window.innerWidth;
+        const toFix = [];
+        // 只看块级/弹性容器（忽略 inline/span/button 等内联元素，它们 follow 父宽度）
+        for (const el of document.querySelectorAll('div, section, header, main, nav, article, footer, table, ul, ol')) {
+            const r = el.getBoundingClientRect();
+            // 跳过不可见、太小、已正确约束的元素
+            if (r.width < 200) continue;
+            if (r.height < 5) continue; // 空容器不管
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden') continue;
+            const overflow = r.right - vw;
+            if (overflow <= 5) continue;
+            // 这个元素超出了视口，需要强制限制
+            // 计算它实际可用的最大宽度：视口 - 左偏移
+            const available = vw - r.left;
+            if (available < 100) continue; // 太窄，可能是定位异常
+            toFix.push({ el, overflow, width: r.width, available });
+        }
+        // 按溢出量从大到小排列，先修外层再修内层（避免修完外层后内层自动正确）
+        toFix.sort((a, b) => b.overflow - a.overflow);
+        // 只修溢出量 >20px 的前 15 个（避免过度干涉，内层元素会随外层一起修正）
+        const fixed = [];
+        for (const item of toFix.slice(0, 15)) {
+            if (item.overflow < 20) break;
+            item.el.style.setProperty('width', '100%', 'important');
+            item.el.style.setProperty('max-width', item.available + 'px', 'important');
+            item.el.style.setProperty('min-width', '0', 'important');
+            item.el.style.setProperty('margin-left', '0', 'important');
+            item.el.style.setProperty('margin-right', '0', 'important');
+            const cls = typeof item.el.className === 'string' ? item.el.className.trim().split(/\s+/).slice(0, 3).join(' ') : '';
+            fixed.push((item.el.tagName + (cls ? '.' + cls : '') + ' +' + item.overflow + 'px'));
+        }
+        // 如果还有被 Header 撑开的问题，直接限制到视口
+        // （header.AppHeader 可能不受上面逻辑覆盖，单独处理）
+        if (fixed.length > 0) {
+            console.log('[知乎适配] JS 修复 ' + fixed.length + ' 个溢出容器: ' + fixed.join(', '));
+        }
+    };
+
+    // 3c. 强制 viewport meta：让布局视口 = 设备宽度，配合 CSS 的 width:100%
     //    （SPA 切换或桌面版模板可能没有/替换此 meta，需要持续兜底）
     const VIEWPORT_CONTENT = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover';
     const enforceViewport = () => {
@@ -510,7 +538,7 @@ padding-bottom:0!important;
         }
     };
 
-    // 3b. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
+    // 3d. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
     const injectCss = () => {
         // 先移除旧的（可能已被 SPA 清理但残留）
         const old = document.getElementById('custom-layout-css');
@@ -521,6 +549,8 @@ padding-bottom:0!important;
         style.textContent = baseCss;
         (document.head || document.documentElement).appendChild(style);
         enforceViewport();
+        // CSS-in-JS 渲染可能晚于注入，延迟 300ms 后 JS 修复一次
+        setTimeout(fixOverflowingContainers, 300);
     };
 
     // 4. 创建按钮
@@ -551,6 +581,7 @@ padding-bottom:0!important;
         }
         enforceViewport();
         applyHeaderDisplay();
+        setTimeout(fixOverflowingContainers, 500);
     };
 
     if (document.readyState === 'loading') {
@@ -609,7 +640,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.20',
+            version: '1.23',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),
@@ -785,6 +816,7 @@ padding-bottom:0!important;
         debounceTimer = setTimeout(() => {
             applyHeaderDisplay();
             enforceViewport();
+            fixOverflowingContainers();
             if (!document.getElementById('custom-layout-css')) {
                 injectCss();
             }
