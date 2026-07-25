@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.15
-// @description  桌面UA伪装+全站宽度适配，隐藏干扰元素，防抖+轮询应对SPA切换
+// @version      1.17
+// @description  桌面版网页适配手机宽度，隐藏无关元素，轻量高性能
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -18,40 +18,30 @@
     // 1. 核心布局 CSS
     const baseCss = `
 
-        /* --- 全局防溢出基础 --- */
+        /* --- 全局基础 --- */
         html, body, #root {
-            overflow-x: hidden !important;
+            width: 100% !important;
             max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow-x: hidden !important;
         }
         *, *::before, *::after {
             box-sizing: border-box !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-        }
-
-        /* 核弹：所有容器 overflow:hidden 切断溢出 + 限制最大宽度 */
-        div, section, article, main, header, footer, nav, aside,
-        form, table, ul, ol, li, p, figure, blockquote, pre,
-        h1, h2, h3, h4, h5, h6, span, a, strong, em, label, button {
-            max-width: 100% !important;
-            overflow-x: hidden !important;
-            white-space: normal !important;
-        }
-        /* 例外：仅绝对/固定定位的弹窗不限制（position:absolute/fixed 不影响 scrollWidth）*/
-        [class*="MuiMenu"], [class*="MuiDialog"], [class*="MuiTooltip"],
-        [class*="MuiPopover"], [class*="MuiSelect"] {
-            max-width: none !important;
-            overflow-x: visible !important;
-        }
-        /* 需要保留 nowrap 的元素 */
-        .AuthorInfo-badgeText, .AuthorInfo-badge {
-            white-space: nowrap !important;
         }
 
         /* 所有媒体元素限制最大宽度 */
         img, svg, video, iframe, canvas, figure {
             max-width: 100% !important;
             height: auto !important;
+        }
+
+        /* Header 宽度约束（即便 JS 还没隐藏） */
+        header.AppHeader,
+        header[role="banner"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
         }
 
         body{
@@ -74,16 +64,37 @@
         }
 
         /* 强制主容器撑满：适配首页、问题页、搜索页 */
-        #root .App-main .Topstory-container,
+
+        /* 页面所有主要容器填满视口 */
+        #root > div,
+        #root > div > main,
+        #root .App-main,
+        #root .Topstory,
+        .App,
+        main[role="main"],
+        .Topstory-container,
+        .Topstory-mainColumn,
+        .Topstory-mainColumnCard,
+        .Question-main,
+        .Question-mainColumn,
+        .Search-container,
+        .SearchResult-main,
+        .SearchMain {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: auto !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .Topstory-container,
         .Question-main,
         .Search-container,
         .SearchResult-main
         {
             display: flex !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
         }
 .QuestionRichText.QuestionRichText--expandable,
 .QuestionHeader-title,
@@ -209,6 +220,9 @@ width:100px!important;
         /* 内容列占据全部宽度 */
         .App-main,
         .AppHeader,
+        .Topstory,
+        .Topstory-mainColumnCard,
+        div[data-za-detail-view-path-module],
         div[style="opacity: 1; transform: none;"],
 .QuestionHeader-footer-inner,
         .Topstory-mainColumn,
@@ -264,7 +278,9 @@ width:100px!important;
         [class*="RelatedCommodity"], [class*="Advert"],
         [class*="CardLink"], [class*="GoodsCard"],
         /* 运营位 */
-        [class*="Operation"], [class*="Banner"], [class*="Promotion"],
+        [class*="Operation"], [class*="Banner"], [class*="Promotion"] {
+            display: none !important;
+        }
         /* 保留点赞/评论/收藏等基本操作 */
         .ContentItem-action {
             display: inline-flex !important;
@@ -409,13 +425,8 @@ width:100px!important;
         applyHeaderDisplay();
     });
 
-    // 初始化执行（document-start 时可能还没有 head，先注入到 documentElement）
+    // 初始化执行
     injectCss();
-
-    // DOM 就绪后立即重新注入到 head（保证在 <head> 中优先于页面 CSS）
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => injectCss());
-    }
 
     const init = () => {
         if (!document.body.contains(btn)) {
@@ -435,28 +446,19 @@ width:100px!important;
     const observer = new MutationObserver(() => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            injectCss();
             applyHeaderDisplay();
+            if (!document.getElementById('custom-layout-css')) {
+                injectCss();
+            }
             if (document.body && !document.body.contains(btn)) {
                 document.body.appendChild(btn);
             }
-        }, 30);
+        }, 100);
     });
 
     observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
-        attributes: true,
-        attributeFilter: ['style', 'placeholder']
     });
-
-    // 6. 轮询兜底（每 500ms 确保 CSS 和 Header 状态正确）
-    setInterval(() => {
-        injectCss();
-        applyHeaderDisplay();
-        if (document.body && !document.body.contains(btn)) {
-            document.body.appendChild(btn);
-        }
-    }, 500);
 
 })();
