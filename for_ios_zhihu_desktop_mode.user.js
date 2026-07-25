@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.20
-// @description  桌面版网页适配手机宽度，隐藏无关元素。真机可视化诊断面板（双击悬浮按钮），无需 Mac
+// @version      1.21
+// @description  桌面版网页适配手机宽度，诊断面板支持下载 JSON/TXT + 一键复制，无需 Mac
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -536,7 +536,7 @@ padding-bottom:0!important;
         init();
     }
 
-    // 5. 溢出诊断（真机可视化：双击悬浮按钮显示面板，也暴露到 window）
+    // 5. 溢出诊断（双击悬浮按钮弹出面板 + 可下载 JSON / 复制）
     const showDiagnosticPanel = () => {
         // 如果面板已存在，切换显示
         const existing = document.getElementById('zhihu-diag-panel');
@@ -549,90 +549,210 @@ padding-bottom:0!important;
         const de = document.documentElement;
         const vp = document.querySelector('meta[name="viewport"]');
 
-        // 扫描溢出元素
+        // ── 扫描溢出元素（完整 CSS 属性，用于 JSON 导出） ──
         const found = [];
         for (const el of document.querySelectorAll('*')) {
             const r = el.getBoundingClientRect();
-            if (r.width > 50 && r.right > vw + 1) {
+            if (r.width > 30 && r.right > vw + 1) {
                 const s = getComputedStyle(el);
                 found.push({
-                    el,
                     sel: el.tagName.toLowerCase()
                         + (el.id ? '#' + el.id : '')
-                        + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.') : ''),
-                    w: Math.round(r.width), r: Math.round(r.right), l: Math.round(r.left),
-                    mw: s.minWidth, ow: s.overflowWrap, ws: s.whiteSpace.slice(0, 10), pos: s.position,
+                        + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 6).join('.') : ''),
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    classes: typeof el.className === 'string' ? el.className.trim() : '',
+                    rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom) },
+                    overflow: Math.round(r.right - vw),
+                    css: {
+                        display: s.display, position: s.position, float: s.float,
+                        width: s.width, minWidth: s.minWidth, maxWidth: s.maxWidth,
+                        height: s.height, minHeight: s.minHeight, maxHeight: s.maxHeight,
+                        margin: s.margin, padding: s.padding,
+                        boxSizing: s.boxSizing,
+                        overflowX: s.overflowX, overflowY: s.overflowY,
+                        overflowWrap: s.overflowWrap, wordBreak: s.wordBreak, whiteSpace: s.whiteSpace,
+                        flex: s.flex, flexShrink: s.flexShrink, flexGrow: s.flexGrow, flexBasis: s.flexBasis,
+                        textOverflow: s.textOverflow,
+                        visibility: s.visibility,
+                        transform: s.transform,
+                    },
+                    text: (el.textContent || '').trim().slice(0, 80),
                 });
             }
         }
-        found.sort((a, b) => b.r - a.r);
+        found.sort((a, b) => b.overflow - a.overflow);
 
-        // 构建面板 HTML
-        let html = '<div style="padding:10px 12px;font-size:11px;background:#333;color:#eee;position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;">';
-        html += '<div><b>视图信息</b></div>';
-        html += '<div style="cursor:pointer;font-size:14px;color:#f66;padding:0 6px;" onclick="document.getElementById(\'zhihu-diag-panel\').remove()">✕</div>';
+        // ── 诊断数据 ──
+        const data = {
+            timestamp: new Date().toISOString(),
+            version: '1.20',
+            url: location.href,
+            pathname: location.pathname,
+            hasRoot: !!document.getElementById('root'),
+            viewport: {
+                innerWidth: window.innerWidth,
+                innerHeight: window.innerHeight,
+                documentElement_clientWidth: de.clientWidth,
+                documentElement_scrollWidth: de.scrollWidth,
+                screen: { width: screen.width, height: screen.height, dpr: window.devicePixelRatio },
+                visualViewport: window.visualViewport ? { width: Math.round(window.visualViewport.width), height: Math.round(window.visualViewport.height), scale: window.visualViewport.scale } : null,
+                viewportMeta: vp ? vp.getAttribute('content') : null,
+            },
+            overview: {
+                totalElements: document.querySelectorAll('*').length,
+                overflowingElements: found.length,
+                maxOverflow: found.length > 0 ? found[0].overflow : 0,
+            },
+            overflowing: found,
+        };
+
+        const jsonStr = JSON.stringify(data, null, 2);
+
+        // ── 辅助函数：触发下载（iOS Safari 会打开新标签页预览） ──
+        const downloadBlob = (content, filename, mimeType) => {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.target = '_blank';
+            a.style.cssText = 'display:inline-block;padding:8px 16px;background:#0084ff;color:white;border-radius:6px;text-decoration:none;font-size:12px;font-weight:bold;margin:4px;text-align:center;';
+            a.textContent = '⬇ ' + filename;
+            document.body.appendChild(a);
+            a.click();
+            // 延迟清理（给浏览器时间打开）
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+        };
+
+        const copyText = (text, label) => {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('✅ 已复制到剪贴板（' + label + '）');
+                }).catch(() => {
+                    alert('❌ 复制失败，请用下方的"下载"按钮');
+                });
+            } else {
+                // fallback：创建 textarea 手动复制
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:200px;z-index:999999999;font-size:10px;';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.focus();
+                alert('iOS 限制自动复制。请手动全选 → 拷贝，然后粘贴发送给我。');
+                setTimeout(() => { document.body.removeChild(ta); }, 60000);
+            }
+        };
+
+        // ── 构建面板 HTML ──
+        let html = '';
+        // 顶部操作栏（sticky）
+        html += '<div style="padding:8px 10px;background:#222;position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid #444;">';
+        html += '<b style="color:#fff;font-size:12px;margin-right:auto;">🔍 诊断 ' + data.overview.overflowingElements + ' 个溢出</b>';
+        html += '<button id="diag-btn-json" style="padding:6px 12px;background:#0084ff;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:bold;">⬇ JSON</button>';
+        html += '<button id="diag-btn-txt" style="padding:6px 12px;background:#0084ff;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:bold;">⬇ TXT</button>';
+        html += '<button id="diag-btn-copy" style="padding:6px 12px;background:#555;color:#fff;border:none;border-radius:5px;font-size:11px;">📋 复制</button>';
+        html += '<button id="diag-btn-close" style="padding:6px 12px;background:#c33;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:bold;margin-left:4px;">✕ 关</button>';
         html += '</div>';
 
+        // 视图信息
         html += '<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace;">';
-        html += '<tr style="background:#222;"><td style="padding:4px 6px;">innerWidth</td><td style="padding:4px 6px;">' + vw + '</td></tr>';
-        html += '<tr><td style="padding:4px 6px;">scrollWidth</td><td style="padding:4px 6px;">' + de.scrollWidth + (de.scrollWidth > vw ? ' ⚠️溢出' : ' ✅') + '</td></tr>';
-        html += '<tr style="background:#222;"><td style="padding:4px 6px;">screen.width</td><td style="padding:4px 6px;">' + screen.width + ' (dpr:' + window.devicePixelRatio + ')</td></tr>';
-        html += '<tr><td style="padding:4px 6px;">visualViewport</td><td style="padding:4px 6px;">' + (window.visualViewport ? Math.round(window.visualViewport.width) : 'n/a') + '</td></tr>';
-        html += '<tr style="background:#222;"><td style="padding:4px 6px;">viewport meta</td><td style="padding:4px 6px;">' + (vp ? vp.getAttribute('content') : '（无）') + '</td></tr>';
-        html += '<tr><td style="padding:4px 6px;">hasRoot</td><td style="padding:4px 6px;">' + !!document.getElementById('root') + '</td></tr>';
+        html += '<tr style="background:#1a1a1a;"><td style="padding:4px 8px;color:#888;width:40%;">URL</td><td style="padding:4px 8px;">' + data.pathname.replace(/</g,'&lt;') + '</td></tr>';
+        html += '<tr><td style="padding:4px 8px;color:#888;">innerWidth</td><td style="padding:4px 8px;"><b>' + data.viewport.innerWidth + '</b></td></tr>';
+        html += '<tr style="background:#1a1a1a;"><td style="padding:4px 8px;color:#888;">scrollWidth</td><td style="padding:4px 8px;">' + data.viewport.documentElement_scrollWidth + (data.viewport.documentElement_scrollWidth > data.viewport.innerWidth ? ' <span style="color:#f66;">⚠️ 溢出</span>' : ' <span style="color:#0f0;">✅</span>') + '</td></tr>';
+        html += '<tr><td style="padding:4px 8px;color:#888;">screen / dpr</td><td style="padding:4px 8px;">' + data.viewport.screen.width + '×' + data.viewport.screen.height + ' / @' + data.viewport.screen.dpr + 'x</td></tr>';
+        html += '<tr style="background:#1a1a1a;"><td style="padding:4px 8px;color:#888;">visualViewport</td><td style="padding:4px 8px;">' + (data.viewport.visualViewport ? data.viewport.visualViewport.width + '×' + data.viewport.visualViewport.height + ' scale:' + data.viewport.visualViewport.scale : 'n/a') + '</td></tr>';
+        html += '<tr><td style="padding:4px 8px;color:#888;">viewport meta</td><td style="padding:4px 8px;">' + (data.viewport.viewportMeta || '<span style="color:#f66;">（无）</span>') + '</td></tr>';
+        html += '<tr style="background:#1a1a1a;"><td style="padding:4px 8px;color:#888;">hasRoot / 总元素数</td><td style="padding:4px 8px;">' + data.hasRoot + ' / ' + data.overview.totalElements + ' 个</td></tr>';
         html += '</table>';
 
-        html += '<div style="padding:10px 12px;font-size:11px;background:#333;color:#eee;position:sticky;top:30px;z-index:2;">';
-        html += '<b>溢出元素 (' + found.length + ' 个)</b> — 按超出程度排序';
+        // 溢出元素表格
+        html += '<div style="padding:8px 10px;font-size:11px;background:#333;color:#ccc;position:sticky;top:42px;z-index:2;">';
+        html += '<b>溢出元素</b> — 按超出程度排序（共 ' + data.overview.overflowingElements + ' 个）';
         html += '</div>';
 
         if (found.length === 0) {
-            html += '<div style="padding:20px;color:#0f0;text-align:center;font-size:13px;">✅ 没有元素超出视口宽度</div>';
+            html += '<div style="padding:40px 20px;color:#0f0;text-align:center;font-size:14px;">✅ 所有元素都在视口宽度内，没有溢出</div>';
         } else {
             html += '<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:monospace;table-layout:fixed;">';
-            html += '<thead style="background:#222;position:sticky;top:60px;z-index:1;">';
-            html += '<tr><th style="text-align:left;padding:3px 4px;width:5%;">#</th>';
-            html += '<th style="text-align:left;padding:3px 4px;width:35%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">选择器</th>';
-            html += '<th style="text-align:right;padding:3px 4px;width:10%;">宽度</th>';
-            html += '<th style="text-align:right;padding:3px 4px;width:10%;">超出</th>';
-            html += '<th style="text-align:left;padding:3px 4px;width:15%;">minW/ow/ws</th>';
-            html += '<th style="text-align:left;padding:3px 4px;width:10%;">pos</th>';
+            html += '<thead style="background:#222;position:sticky;top:72px;z-index:2;">';
+            html += '<tr>';
+            html += '<th style="text-align:left;padding:3px 4px;width:4%;">#</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:30%;">选择器 (CSS)</th>';
+            html += '<th style="text-align:right;padding:3px 4px;width:8%;">宽</th>';
+            html += '<th style="text-align:right;padding:3px 4px;width:7%;">超出</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:18%;">minW/ow/ws/flex</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:8%;">pos</th>';
+            html += '<th style="text-align:left;padding:3px 4px;width:25%;">内容预览</th>';
             html += '</tr></thead><tbody>';
 
-            for (let i = 0; i < Math.min(found.length, 40); i++) {
+            for (let i = 0; i < Math.min(found.length, 50); i++) {
                 const f = found[i];
-                const over = f.r - vw;
-                const bg = i % 2 === 0 ? '#1a1a1a' : '#111';
-                const color = over > 100 ? '#f66' : over > 30 ? '#fa0' : '#ff6';
+                const bg = i % 2 === 0 ? '#141414' : '#0a0a0a';
+                const color = f.overflow > 100 ? '#f66' : f.overflow > 30 ? '#fa0' : '#ff6';
                 html += '<tr style="background:' + bg + ';">';
-                html += '<td style="padding:2px 4px;color:' + color + ';">' + (i + 1) + '</td>';
-                html += '<td style="padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aaf;" title="' + f.sel.replace(/"/g, '&quot;') + '">' + f.sel + '</td>';
-                html += '<td style="padding:2px 4px;text-align:right;">' + f.w + '</td>';
-                html += '<td style="padding:2px 4px;text-align:right;color:' + color + ';font-weight:bold;">+' + over + '</td>';
-                html += '<td style="padding:2px 4px;font-size:8px;">' + f.mw + '/' + f.ow + '/' + f.ws + '</td>';
-                html += '<td style="padding:2px 4px;font-size:8px;">' + f.pos + '</td>';
+                html += '<td style="padding:2px 4px;color:' + color + ';font-weight:bold;">' + (i + 1) + '</td>';
+                html += '<td style="padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#88f;" title="' + f.sel.replace(/"/g, '&quot;') + '">' + f.sel + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;">' + f.rect.w + '</td>';
+                html += '<td style="padding:2px 4px;text-align:right;color:' + color + ';font-weight:bold;">+' + f.overflow + '</td>';
+                html += '<td style="padding:2px 4px;font-size:8px;color:#aaa;">' + f.css.minWidth + '/' + f.css.overflowWrap + '/' + f.css.whiteSpace.slice(0,8) + '/' + (f.css.flexShrink !== '1' ? 'shrink:'+f.css.flexShrink : '') + '</td>';
+                html += '<td style="padding:2px 4px;font-size:8px;color:#aaa;">' + f.css.position + '</td>';
+                html += '<td style="padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:#666;">' + f.text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</td>';
                 html += '</tr>';
             }
             html += '</tbody></table>';
-            if (found.length > 40) {
-                html += '<div style="padding:6px;color:#888;text-align:center;font-size:10px;">...还有 ' + (found.length - 40) + ' 个溢出元素未显示（仅列出前 40 个）</div>';
+            if (found.length > 50) {
+                html += '<div style="padding:10px;color:#888;text-align:center;font-size:10px;">...还有 ' + (found.length - 50) + ' 个溢出元素（面板显示前 50，JSON 中包含全部 ' + found.length + ' 个）</div>';
             }
         }
 
-        // 创建面板
+        // ── 创建面板 ──
         const panel = document.createElement('div');
         panel.id = 'zhihu-diag-panel';
         panel.innerHTML = html;
-        panel.style.cssText = 'position:fixed;top:10px;left:5px;right:5px;bottom:10px;background:#0a0a0a;color:#ccc;z-index:2147483646;border-radius:8px;overflow:auto;-webkit-overflow-scrolling:touch;font-size:11px;box-shadow:0 0 40px rgba(0,0,0,0.9);border:1px solid #444;';
+        panel.style.cssText = 'position:fixed;top:8px;left:5px;right:5px;bottom:8px;background:#080808;color:#ccc;z-index:2147483646;border-radius:8px;overflow:auto;-webkit-overflow-scrolling:touch;font-size:11px;box-shadow:0 0 50px rgba(0,0,0,0.95);border:1px solid #555;';
         document.body.appendChild(panel);
 
-        // 支持从页面内关闭（点 × 或双击按钮再次切换）
+        // ── 绑定按钮事件 ──
+        panel.querySelector('#diag-btn-json').addEventListener('click', () => {
+            downloadBlob(jsonStr, 'zhihu-diag-' + Date.now() + '.json', 'application/json');
+        });
+        panel.querySelector('#diag-btn-txt').addEventListener('click', () => {
+            // TXT 格式更易读——只输出溢出元素摘要
+            let txt = '=== 知乎诊断报告 ===\n';
+            txt += '时间: ' + data.timestamp + '\n';
+            txt += 'URL: ' + data.url + '\n';
+            txt += 'pathname: ' + data.pathname + '\n';
+            txt += 'innerWidth: ' + data.viewport.innerWidth + '  scrollWidth: ' + data.viewport.documentElement_scrollWidth + '\n';
+            txt += 'screen: ' + data.viewport.screen.width + 'x' + data.viewport.screen.height + ' @' + data.viewport.screen.dpr + 'x\n';
+            txt += 'viewport meta: ' + (data.viewport.viewportMeta || '(none)') + '\n';
+            txt += 'hasRoot: ' + data.hasRoot + '  total elements: ' + data.overview.totalElements + '\n';
+            txt += 'overflowing: ' + data.overview.overflowingElements + '\n\n';
+            txt += '=== 溢出元素（按超出排序） ===\n';
+            for (let i = 0; i < found.length; i++) {
+                const f = found[i];
+                txt += '\n[' + (i + 1) + '] +' + f.overflow + 'px  width=' + f.rect.w + '  left=' + f.rect.l + '  right=' + f.rect.r + '\n';
+                txt += '    selector: ' + f.sel + '\n';
+                txt += '    CSS: display=' + f.css.display + ' position=' + f.css.position + ' minW=' + f.css.minWidth + ' maxW=' + f.css.maxWidth + '\n';
+                txt += '         ow=' + f.css.overflowWrap + ' wb=' + f.css.wordBreak + ' ws=' + f.css.whiteSpace + ' flex=' + f.css.flex + ' shrink=' + f.css.flexShrink + '\n';
+                txt += '         padding=' + f.css.padding + ' margin=' + f.css.margin + ' boxSizing=' + f.css.boxSizing + '\n';
+                txt += '    text: ' + f.text + '\n';
+            }
+            downloadBlob(txt, 'zhihu-diag-' + Date.now() + '.txt', 'text/plain');
+        });
+        panel.querySelector('#diag-btn-copy').addEventListener('click', () => {
+            copyText(jsonStr, JSON.stringify({ n: found.length, maxOverflow: found.length > 0 ? found[0].overflow : 0 }));
+        });
+        panel.querySelector('#diag-btn-close').addEventListener('click', () => {
+            panel.remove();
+        });
+        // 点面板空白区域也可关闭
         panel.addEventListener('click', (ev) => {
             if (ev.target === panel) { panel.style.display = 'none'; }
         });
     };
 
-    // 也保留 console 路径（用于远程调试或自动化）
     window.__diagnoseOverflow = showDiagnosticPanel;
 
     // 6. MutationObserver + 防抖（解决 SPA 跳转）
