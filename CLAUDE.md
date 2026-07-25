@@ -71,8 +71,9 @@ node test/zhihu-test.js --spa --video  # 录屏
 
 ## 版本历史
 
-- v1.20：放弃 console 诊断，改为真机可视化面板（双击悬浮按钮），无需 Mac/Safari 远程调试
-- v1.19：修复答案页右侧文字被裁（flex min-width:0）+ 正文换行 + pre/code/table 防溢出
+- v1.22：修复答案页横向溢出（JSON 诊断定位`div.css-1gl8cva`等 CSS-in-JS hash wrapper 有 1032px 固定宽度+负 margin，脚本现有选择器无法命中 → 加 `#root>div>div` 结构选择器强制 max-width:100%）
+- v1.21：诊断面板支持可视化面板内下载 JSON/TXT + 一键复制，不依赖 Mac/Safari 远程调试
+- v1.20：真机可视化诊断面板（双击悬浮按钮），无需 Mac
 - v1.18：修复双滚动条（overflow-x:clip）、热榜封面图重叠（固定尺寸+object-fit）、强制 viewport meta + 真机双击诊断按钮
 - v1.17：回归轻量，修复性能问题（去掉全局选择器和高频轮询）
 - v1.14-16：修复 CSS 注入失效、SPA 溢出、按钮反转

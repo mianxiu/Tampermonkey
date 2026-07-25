@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.21
-// @description  桌面版网页适配手机宽度，诊断面板支持下载 JSON/TXT + 一键复制，无需 Mac
+// @version      1.22
+// @description  桌面版网页适配手机宽度。修复答案页 CSS-in-JS 容器宽度溢出（结构选择器拦截 hash class wrapper）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -41,7 +41,9 @@
         header.AppHeader,
         header[role="banner"] {
             width: 100% !important;
+            min-width: 0 !important;
             max-width: 100% !important;
+            margin: 0 !important;
             overflow: hidden !important;
         }
 
@@ -49,6 +51,27 @@
         background:white!important;
         }
         /* --- 全局宽度自适应与去侧边栏 --- */
+        /* ════════════════════════════════════════════════════════ */
+        /*  拦截 CSS-in-JS 布局容器（知乎新架构生成的 hash class wrapper） */
+        /*  这些 div 有固定宽度（1000px~1175px）、负 margin 等桌面版设置， */
+        /*  由于 class 名是动态 hash，无法用类名精准选择。 */
+        /*  用 #root 子级结构选择器，仅匹配最多 5-10 个元素，不影响性能。*/
+        /* ════════════════════════════════════════════════════════ */
+        #root > div > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            box-sizing: border-box !important;
+        }
+        #root > div > div > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+        }
+
         /* 隐藏首页、问题页、搜索页侧边栏 */
         .GlobalSideBar,
         .Question-sideColumn,
