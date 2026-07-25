@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.17
-// @description  桌面版网页适配手机宽度，隐藏无关元素，轻量高性能
+// @version      1.18
+// @description  桌面版网页适配手机宽度，隐藏无关元素，轻量高性能（修复双滚动条/热榜封面重叠，强制 viewport）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
 // @run-at       document-start
@@ -24,7 +24,8 @@
             max-width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            overflow-x: hidden !important;
+            /* 用 clip 而非 hidden：hidden 会把 overflow-y 逼成 auto，凭空多一条纵向滚动条 */
+            overflow-x: clip !important;
         }
         *, *::before, *::after {
             box-sizing: border-box !important;
@@ -206,6 +207,38 @@ padding-left:0px!important;
 }
 .RichContent-cover{
 width:100px!important;
+}
+/* 热榜封面图：全局 height:auto 会让各图按原始比例高低不一，高图溢出行高盖住下一条。
+   固定尺寸 + object-fit:cover 统一高度，消除重叠 */
+.HotItem-img,
+.HotItem-img img{
+width:100px!important;
+height:70px!important;
+max-width:100px!important;
+max-height:70px!important;
+flex:none!important;
+object-fit:cover!important;
+}
+.HotItem{
+align-items:flex-start!important;
+}
+/* 热榜摘要冗长且与底部"热度/分享"绝对定位栏重叠，列表只保留标题+热度更清爽 */
+.HotItem-excerpt{
+display:none!important;
+}
+/* 让热度/分享栏回归正常文档流，不再绝对定位盖住上方内容 */
+.HotItem-metrics.HotItem-metrics--bottom{
+position:static!important;
+margin-top:6px!important;
+flex-wrap:nowrap!important;
+white-space:nowrap!important;
+}
+.HotItem-metrics.HotItem-metrics--bottom>*{
+flex:none!important;
+white-space:nowrap!important;
+}
+.HotItem-content{
+padding-bottom:0!important;
 }
         .Card.SearchResult-Card{
         margin-bottom:0!important;
@@ -400,7 +433,22 @@ width:100px!important;
         }
     }
 
-    // 3. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
+    // 3. 强制 viewport meta：让布局视口 = 设备宽度，配合 CSS 的 width:100%
+    //    （SPA 切换或桌面版模板可能没有/替换此 meta，需要持续兜底）
+    const VIEWPORT_CONTENT = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover';
+    const enforceViewport = () => {
+        let vp = document.querySelector('meta[name="viewport"]');
+        if (!vp) {
+            vp = document.createElement('meta');
+            vp.setAttribute('name', 'viewport');
+            (document.head || document.documentElement).appendChild(vp);
+        }
+        if (vp.getAttribute('content') !== VIEWPORT_CONTENT) {
+            vp.setAttribute('content', VIEWPORT_CONTENT);
+        }
+    };
+
+    // 3b. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
     const injectCss = () => {
         // 先移除旧的（可能已被 SPA 清理但残留）
         const old = document.getElementById('custom-layout-css');
@@ -410,6 +458,7 @@ width:100px!important;
         style.id = 'custom-layout-css';
         style.textContent = baseCss;
         (document.head || document.documentElement).appendChild(style);
+        enforceViewport();
     };
 
     // 4. 创建按钮
@@ -425,6 +474,23 @@ width:100px!important;
         applyHeaderDisplay();
     });
 
+    // 真机诊断：双击悬浮按钮，弹出真实布局尺寸。
+    // 若 innerWidth 远大于屏幕宽度（如 ~980），说明是 iOS "请求桌面网站" 强制宽布局视口导致的挤压。
+    btn.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        const de = document.documentElement;
+        const vp = document.querySelector('meta[name="viewport"]');
+        alert(
+            'window.innerWidth = ' + window.innerWidth + '\n' +
+            'documentElement.clientWidth = ' + de.clientWidth + '\n' +
+            'documentElement.scrollWidth = ' + de.scrollWidth + '\n' +
+            'screen.width = ' + screen.width + '\n' +
+            'devicePixelRatio = ' + window.devicePixelRatio + '\n' +
+            'visualViewport.width = ' + (window.visualViewport ? Math.round(window.visualViewport.width) : 'n/a') + '\n' +
+            'viewport meta = ' + (vp ? vp.getAttribute('content') : '（无）')
+        );
+    });
+
     // 初始化执行
     injectCss();
 
@@ -432,6 +498,7 @@ width:100px!important;
         if (!document.body.contains(btn)) {
             document.body.appendChild(btn);
         }
+        enforceViewport();
         applyHeaderDisplay();
     };
 
@@ -447,6 +514,7 @@ width:100px!important;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             applyHeaderDisplay();
+            enforceViewport();
             if (!document.getElementById('custom-layout-css')) {
                 injectCss();
             }
