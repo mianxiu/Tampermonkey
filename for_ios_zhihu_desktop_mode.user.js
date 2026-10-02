@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.27
+// @version      1.28
 // @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -20,6 +20,8 @@
 
         /* --- 全局基础 --- */
         html, body, #root {
+            background: #fff !important;
+            color-scheme: light;
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
@@ -243,6 +245,7 @@ padding-left:20px;
             display: none !important;
         }
         [data-zhihu-comment-overlay] {
+            background: #fff !important;
             position: fixed !important;
             inset: 0 !important;
             padding: 0 !important;
@@ -609,12 +612,13 @@ padding-bottom:0!important;
         /* --- 悬浮按钮样式 --- */
         #toggle-header-btn {
             position: fixed;
-            top: 10px;
-            right: 30px;
+            top: calc(env(safe-area-inset-top, 0px) + 8px);
+            right: calc(env(safe-area-inset-right, 0px) + 8px);
             width: 44px;
             height: 44px;
-            background: #8590a6;
-            color: white;
+            background: #fff;
+            color: #1772f6;
+            border: 1px solid #e5eaf2;
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -623,18 +627,25 @@ padding-bottom:0!important;
             z-index: 2147483647;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             font-size: 18px;
-            opacity: 0.2;
-            transition: all 0.3s;
+            transition: background-color 0.15s;
             user-select: none;
+        }
+        #toggle-header-btn svg {
+            width: 22px;
+            height: 22px !important;
+            pointer-events: none;
+        }
+        html[data-zhihu-header-visible] #toggle-header-btn {
+            background: #1772f6;
+            color: #fff;
         }
     `;
 
     // 2. 强力修改 Header 显示属性
     function applyHeaderDisplay() {
         document.documentElement.toggleAttribute('data-zhihu-header-visible', !isHeaderHidden);
-        // 评论弹层右上角是“默认/最新”排序，悬浮按钮避开该区域。
-        btn.style.right = document.querySelector('.RichContent--hotCommentExpanded')
-            ? 'calc(50% - 22px)' : '30px';
+        btn.setAttribute('aria-expanded', String(!isHeaderHidden));
+        btn.setAttribute('aria-label', isHeaderHidden ? '打开搜索' : '收起搜索');
         const header = document.querySelector('header.AppHeader') || document.querySelector('header[role="banner"]');
         if (header) {
             const searchBar = header.querySelector('.SearchBar');
@@ -817,9 +828,13 @@ padding-bottom:0!important;
     const overflowProperties = ['width', 'max-width', 'min-width', 'margin-left', 'margin-right'];
     const overflowStyles = new Map();
     let overflowTimer;
-    const scheduleOverflowFix = (delay = 300) => {
-        clearTimeout(overflowTimer);
-        overflowTimer = setTimeout(fixOverflowingContainers, delay);
+    const scheduleOverflowFix = (delay = 180) => {
+        // 合并同一批渲染请求，持续更新时也能按时执行，避免不断重启定时器。
+        if (overflowTimer) return;
+        overflowTimer = setTimeout(() => {
+            overflowTimer = undefined;
+            fixOverflowingContainers();
+        }, delay);
     };
     window.addEventListener('resize', () => {
         for (const [el, properties] of overflowStyles) {
@@ -846,6 +861,20 @@ padding-bottom:0!important;
         if (vp.getAttribute('content') !== VIEWPORT_CONTENT) {
             vp.setAttribute('content', VIEWPORT_CONTENT);
         }
+        if (document.head && vp.parentElement !== document.head) document.head.appendChild(vp);
+        // Safari 可用网页主题色为浏览器界面着色；同时覆盖知乎已有的深色主题色。
+        let themes = document.querySelectorAll('meta[name="theme-color"]');
+        if (!themes.length) {
+            const theme = document.createElement('meta');
+            theme.name = 'theme-color';
+            theme.content = '#ffffff';
+            (document.head || document.documentElement).appendChild(theme);
+        } else {
+            for (const theme of themes) {
+                if (theme.content !== '#ffffff') theme.content = '#ffffff';
+                if (document.head && theme.parentElement !== document.head) document.head.appendChild(theme);
+            }
+        }
     };
 
     // 3d. 注入 CSS（强制覆盖，应对 SPA 切换时 <head> 被替换）
@@ -864,9 +893,10 @@ padding-bottom:0!important;
     };
 
     // 4. 创建按钮
-    const btn = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.type = 'button';
     btn.id = 'toggle-header-btn';
-    btn.textContent = '💊';
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>';
     let clickTimer;
 
     btn.addEventListener('click', (e) => {
@@ -874,9 +904,8 @@ padding-bottom:0!important;
         clearTimeout(clickTimer);
         clickTimer = setTimeout(() => {
             isHeaderHidden = !isHeaderHidden;
-            btn.textContent = isHeaderHidden ? '💊' : 'H';
-            btn.style.background = isHeaderHidden ? '#8590a6' : '#0084ff';
             applyHeaderDisplay();
+            if (!isHeaderHidden) document.querySelector('.SearchBar input')?.focus();
             scheduleOverflowFix();
         }, 300);
     });
@@ -899,7 +928,7 @@ padding-bottom:0!important;
         applyHeaderDisplay();
         hideCommentComposers();
         fullscreenComments();
-        scheduleOverflowFix(500);
+        scheduleOverflowFix();
     };
 
     if (document.readyState === 'loading') {
@@ -958,7 +987,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.27',
+            version: '1.28',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),
@@ -1129,14 +1158,23 @@ padding-bottom:0!important;
 
     // 6. MutationObserver + 防抖（解决 SPA 跳转）
     let debounceTimer;
-    const observer = new MutationObserver(() => {
-        clearTimeout(debounceTimer);
+    const observer = new MutationObserver((records) => {
+        // 文本流更新与脚本自己的按钮/诊断 DOM 不需要重扫全站布局。
+        const relevant = records.some(record => {
+            const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+            if (target?.closest('#toggle-header-btn, #zhihu-diag-panel')) return false;
+            // 评论提示可能在编辑器插入后才补上文字，仍需及时隐藏输入区。
+            if (target?.closest('.InputLike.Editable, .CommentEditor, .CommentEditorV2, .CommentInput')) return true;
+            return [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1);
+        });
+        if (!relevant || debounceTimer) return;
         debounceTimer = setTimeout(() => {
+            debounceTimer = undefined;
             applyHeaderDisplay();
             hideCommentComposers();
             fullscreenComments();
             enforceViewport();
-            fixOverflowingContainers();
+            scheduleOverflowFix();
             // 丢弃 SPA 已移除节点的引用。
             for (const el of overflowStyles.keys()) {
                 if (!el.isConnected) overflowStyles.delete(el);
