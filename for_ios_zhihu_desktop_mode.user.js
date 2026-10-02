@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.30
+// @version      1.31
 // @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -249,7 +249,8 @@ padding-left:20px;
         html[data-zhihu-comments-open] {
             overflow: hidden !important;
         }
-        html[data-zhihu-comments-open] #toggle-header-btn {
+        html[data-zhihu-comments-open] #toggle-header-btn,
+        html[data-zhihu-comments-open] #zhihu-collapse-btn {
             display: none !important;
         }
         [data-zhihu-comment-overlay] {
@@ -365,7 +366,8 @@ padding-left:20px;
         box-shadow:none!important;
         }
         .RichContent.is-collapsed .RichContent-inner{
-        max-height:100%!important;
+        max-height:240px!important;
+        overflow:hidden!important;
         }
         .RichContent-inner,
         .ContentItem-title{
@@ -407,6 +409,18 @@ margin:0!important;
     min-width: 0 !important;
     z-index: auto !important;
     box-shadow: none !important;
+}
+.RichContent-actions {
+    flex-wrap: wrap !important;
+    gap: 6px;
+}
+.RichContent-actions .ContentItem-rightButton:not(.ContentItem-expandButton) {
+    margin-left: auto !important;
+    padding: 6px 14px !important;
+    border-radius: 999px !important;
+    background: #f0f6ff !important;
+    color: #1772f6 !important;
+    flex: none !important;
 }
 .HotLanding-contentItem:not(:last-child){
 padding-bottom:5px!important;
@@ -541,7 +555,6 @@ padding-bottom:0!important;
         /* 搜索页无关 */
         .SearchTabs, .SearchTabs-link,
         /* Link card 等 */
-        [class*="RichContent-collapsedText"],
         [class*="OpenInApp"], [class*="open-in-app"],
         [class*="AppBanner"], [class*="app-banner"],
         [class*="DownloadApp"], [class*="download-app"],
@@ -660,6 +673,22 @@ padding-bottom:0!important;
             background: #1772f6;
             color: #fff;
         }
+        #zhihu-collapse-btn {
+            position: fixed;
+            right: calc(env(safe-area-inset-right, 0px) + 12px);
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+            padding: 10px 18px;
+            border: 1px solid #dbe8ff;
+            border-radius: 999px;
+            background: #fff;
+            color: #1772f6;
+            box-shadow: 0 4px 16px rgba(23, 114, 246, 0.16);
+            font-size: 14px;
+            line-height: 22px;
+            cursor: pointer;
+            z-index: 100;
+        }
+        #zhihu-collapse-btn[hidden] { display: none !important; }
     `;
 
     // 2. 强力修改 Header 显示属性
@@ -943,6 +972,56 @@ padding-bottom:0!important;
     btn.type = 'button';
     btn.id = 'toggle-header-btn';
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>';
+    const collapseBtn = document.createElement('button');
+    collapseBtn.id = 'zhihu-collapse-btn';
+    collapseBtn.type = 'button';
+    collapseBtn.textContent = '收起 ↑';
+    collapseBtn.setAttribute('aria-label', '收起当前答案');
+    collapseBtn.hidden = true;
+    let activeCollapse, scrollFrame, lastScrollY = window.scrollY, scrollingUp = false;
+    let suppressCollapse = false;
+    // 原生收起会自动跳回答案开头，这次程序滚动不应再次显示浮动按钮。
+    const resumeCollapse = () => { suppressCollapse = false; };
+    window.addEventListener('wheel', resumeCollapse, {passive: true});
+    window.addEventListener('touchstart', resumeCollapse, {passive: true});
+    window.addEventListener('pointerdown', resumeCollapse, {passive: true});
+    window.addEventListener('keydown', event => {
+        if (/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(event.key)) resumeCollapse();
+    });
+    function updateFloatingCollapse() {
+        activeCollapse = undefined;
+        if (scrollingUp && !suppressCollapse && location.pathname.startsWith('/question/')
+            && !document.documentElement.hasAttribute('data-zhihu-comments-open')) {
+            const line = window.innerHeight * 0.35;
+            for (const content of [...document.querySelectorAll('.AnswerItem .RichContent:not(.is-collapsed)')].slice(0, 15)) {
+                const rect = content.getBoundingClientRect();
+                if (rect.top >= line || rect.bottom <= line) continue;
+                activeCollapse = [...content.querySelectorAll('button.ContentItem-rightButton')]
+                    .find(button => button.textContent.includes('收起'));
+                if (activeCollapse) break;
+            }
+        }
+        collapseBtn.hidden = !activeCollapse;
+    }
+    window.addEventListener('scroll', () => {
+        if (scrollFrame) return;
+        scrollFrame = requestAnimationFrame(() => {
+            scrollFrame = undefined;
+            const delta = window.scrollY - lastScrollY;
+            lastScrollY = window.scrollY;
+            if (Math.abs(delta) < 4) return;
+            scrollingUp = delta < 0;
+            updateFloatingCollapse();
+        });
+    }, {passive: true});
+    collapseBtn.addEventListener('click', () => {
+        const target = activeCollapse;
+        scrollingUp = false;
+        suppressCollapse = true;
+        collapseBtn.hidden = true;
+        if (target?.isConnected) target.click();
+        activeCollapse = undefined;
+    });
     let clickTimer;
 
     btn.addEventListener('click', (e) => {
@@ -970,6 +1049,7 @@ padding-bottom:0!important;
         if (!document.body.contains(btn)) {
             document.body.appendChild(btn);
         }
+        if (!document.body.contains(collapseBtn)) document.body.appendChild(collapseBtn);
         enforceViewport();
         applyHeaderDisplay();
         hideCommentComposers();
@@ -1034,7 +1114,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.30',
+            version: '1.31',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),
@@ -1213,7 +1293,7 @@ padding-bottom:0!important;
         // 文本流更新与脚本自己的按钮/诊断 DOM 不需要重扫全站布局。
         const relevant = records.some(record => {
             const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
-            if (target?.closest('#toggle-header-btn, #zhihu-diag-panel')) return false;
+            if (target?.closest('#toggle-header-btn, #zhihu-collapse-btn, #zhihu-diag-panel')) return false;
             // 评论提示可能在编辑器插入后才补上文字，仍需及时隐藏输入区。
             if (target?.closest('.InputLike.Editable, .CommentEditor, .CommentEditorV2, .CommentInput')) return true;
             return [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1);
@@ -1224,6 +1304,7 @@ padding-bottom:0!important;
             applyHeaderDisplay();
             hideCommentComposers();
             fullscreenComments();
+            updateFloatingCollapse();
             enforceViewport();
             scheduleOverflowFix();
             // 丢弃 SPA 已移除节点的引用。
@@ -1236,6 +1317,7 @@ padding-bottom:0!important;
             if (document.body && !document.body.contains(btn)) {
                 document.body.appendChild(btn);
             }
+            if (document.body && !document.body.contains(collapseBtn)) document.body.appendChild(collapseBtn);
         }, 100);
     });
 
