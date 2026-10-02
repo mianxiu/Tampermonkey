@@ -20,6 +20,7 @@ const path = require('path');
 const SCREENSHOT_DIR = path.join(__dirname, 'screenshots');
 const VIDEO_DIR     = path.join(__dirname, 'videos');
 const COOKIE_FILE   = path.join(__dirname, 'cookies.json');
+const AUTH_FILE     = path.join(__dirname, 'auth-state.json');
 const USERSCRIPT_PATH = path.join(__dirname, '..', 'for_ios_zhihu_desktop_mode.user.js');
 
 // 核心：用桌面版 UA 获取桌面版网页 → CSS 适配到手机宽度 → 没有"打开App"等干扰
@@ -98,7 +99,10 @@ async function detectOverflow(page) {
       } catch(e) {}
     }
     overflowing.sort((a,b) => b.overflow - a.overflow);
-    return { vw, docSW, has, n: overflowing.length, top: overflowing.slice(0,10) };
+    const bodyText = document.body?.innerText || '';
+    const loaded = !!document.querySelector('.Topstory-mainColumn, .ExploreHomePage, .Search-container, .QuestionHeader');
+    const blocked = /"code"\s*:\s*40362/.test(bodyText) || /似乎出了点问题/.test(bodyText);
+    return { vw, docSW, has, loaded, blocked, n: overflowing.length, top: overflowing.slice(0,10) };
   });
 }
 
@@ -113,14 +117,26 @@ async function createBrowser(video = false, resolution = RESOLUTIONS[0]) {
     deviceScaleFactor: resolution.scale,
     userAgent: DESKTOP_UA, isMobile: false, hasTouch: true,
   };
+  if (fs.existsSync(AUTH_FILE)) opts.storageState = AUTH_FILE;
   if (video) {
     fs.mkdirSync(VIDEO_DIR, { recursive: true });
     opts.recordVideo = { dir: VIDEO_DIR, size: { width: resolution.width, height: resolution.height } };
   }
   const context = await browser.newContext(opts);
   await context.addInitScript(STEALTH_SCRIPT);
+  const { full } = readUserscript();
+  await context.addInitScript({ content: `(() => {
+    const run = () => { ${full}\n };
+    if (document.documentElement) run();
+    else {
+      const observer = new MutationObserver(() => {
+        if (document.documentElement) { observer.disconnect(); run(); }
+      });
+      observer.observe(document, { childList: true });
+    }
+  })();` });
   const saved = loadCookies();
-  if (saved) await context.addCookies(saved);
+  if (saved && !fs.existsSync(AUTH_FILE)) await context.addCookies(saved);
   return { browser, context };
 }
 
@@ -138,7 +154,7 @@ async function closeBrowser(browser, context, page, video, label) {
     console.log('🎬 %s', dest);
   }
   // 清理任何残留的临时视频文件
-  const files = fs.readdirSync(VIDEO_DIR);
+  const files = fs.existsSync(VIDEO_DIR) ? fs.readdirSync(VIDEO_DIR) : [];
   for (const f of files) {
     if (f.startsWith('page@') && f.endsWith('.webm')) {
       try { fs.unlinkSync(path.join(VIDEO_DIR, f)); } catch(e) {}
@@ -167,15 +183,27 @@ async function interactiveLogin() {
   else { await page.goto('https://www.zhihu.com/signin', { waitUntil: 'domcontentloaded', timeout: 30000 }); }
 
   console.log('⏳ 等待登录完成（最多3分钟）…');
+  let authenticated = false;
   for (let i=0; i<180; i++) {
     await page.waitForTimeout(1000);
     if (!LOGIN_PATTERNS.some(p => page.url().includes(p))) {
       const ok = await page.$('.AppHeader-profile, .AppHeader-nav, [aria-label="个人中心"]').catch(()=>false);
-      if (ok) break;
+      if (ok) {
+        authenticated = await page.evaluate(async () => {
+          try { const r = await fetch('/api/v4/me', {credentials:'include'}); const d = await r.json(); return r.ok && !!d.id && !d.error; }
+          catch { return false; }
+        });
+        if (authenticated) break;
+      }
     }
     if (i%15===14) process.stdout.write(`  ...${i+1}s\n`);
   }
+  if (!authenticated) {
+    await browser.close();
+    throw new Error('登录未得到账户接口确认，保留原登录文件。');
+  }
   saveCookies(await context.cookies());
+  await context.storageState({path:AUTH_FILE,indexedDB:true});
   await browser.close();
   console.log('✅ 登录完成\n');
 }
@@ -192,14 +220,6 @@ async function runMultiRes(video = false) {
   const page = await context.newPage();
   const allResults = [];
 
-  // 注入 JS 隐藏 Header（模拟 Tampermonkey 真实行为）
-  await page.addInitScript(() => {
-    window._hideZhihuHeader = () => {
-      const h = document.querySelector('header.AppHeader') || document.querySelector('header[role="banner"]');
-      if (h) h.style.setProperty('display', 'none', 'important');
-    };
-  });
-
   for (const res of RESOLUTIONS) {
     console.log('═══════════════════════════════════════════');
     console.log('📐 分辨率: %s (%dx%d @%dx)', res.name, res.width, res.height, res.scale);
@@ -212,15 +232,10 @@ async function runMultiRes(video = false) {
       try {
         await page.goto(entry.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(3000);
-        await page.evaluate(() => {
-          const old = document.getElementById('custom-layout-css');
-          if (old) old.remove();
-          if (window._hideZhihuHeader) window._hideZhihuHeader();
-        });
-        await page.addStyleTag({ content: css });
         await page.waitForTimeout(1000);
 
         const r = await detectOverflow(page);
+        if (!r.loaded || r.blocked) throw new Error('页面未正常加载（登录/风控/接口错误），不能判定布局通过');
         const icon = r.has ? '❌' : '✅';
         console.log('  %s scrollWidth=%d / viewport=%d', icon, r.docSW, r.vw);
         if (r.has && r.n > 0) {
@@ -244,9 +259,9 @@ async function runMultiRes(video = false) {
   console.log('\n═══════════════════════════════════════════');
   console.log('📊 多分辨率测试汇总');
   console.log('═══════════════════════════════════════════');
-  const bad = allResults.filter(r => r.overflow);
+  const bad = allResults.filter(r => r.overflow || r.error);
   if (bad.length === 0) console.log('✅ 所有分辨率 × 所有页面 全部通过！');
-  else { console.log('❌ 失败:'); for (const r of bad) console.log('  %s @ %s: scrollWidth=%d > viewport=%d', r.page, r.res, r.scrollW, r.vw); }
+  else { console.log('❌ 失败:'); for (const r of bad) console.log('  %s @ %s: %s', r.page, r.res, r.error || `scrollWidth=${r.scrollW} > viewport=${r.vw}`); }
   process.exit(bad.length > 0 ? 1 : 0);
 }
 
@@ -262,25 +277,19 @@ async function runSPA(video = false) {
   }
 
   const { browser, context } = await createBrowser(video, RESOLUTIONS[0]);
-  const page = await context.newPage();
+  let page = await context.newPage();
+  const homePage = page;
   let step = 0, failures = [];
 
   async function check(label, screenshot) {
     console.log('── Step %d: %s ──', ++step, label);
-    // 模拟 Tampermonkey 完整注入：CSS + 隐藏 Header
-    await page.evaluate((c) => {
-      const old = document.getElementById('custom-layout-css');
-      if (old) old.remove();
-      const style = document.createElement('style');
-      style.id = 'custom-layout-css';
-      style.textContent = c;
-      (document.head || document.documentElement).appendChild(style);
-      const h = document.querySelector('header.AppHeader') || document.querySelector('header[role="banner"]');
-      if (h) h.style.setProperty('display', 'none', 'important');
-    }, css);
     await page.waitForTimeout(1000);
     const r = await detectOverflow(page);
-    const icon = r.has ? '❌' : '✅';
+    if (!r.loaded || r.blocked) {
+      console.log('  ❌ 页面未正常加载，不能判定布局通过');
+      failures.push(label + '（页面未加载）');
+    }
+    const icon = r.has || !r.loaded || r.blocked ? '❌' : '✅';
     console.log('  %s scrollWidth=%d / viewport=%d', icon, r.docSW, r.vw);
     if (r.has && r.n > 0) {
       for (const el of r.top.slice(0, 3))
@@ -294,19 +303,35 @@ async function runSPA(video = false) {
   // Step 1: 首页
   await page.goto('https://www.zhihu.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(3000);
-  await check('首页加载', 'spa-0-home');
+  const home = await check('首页加载', 'spa-0-home');
+  if (!home.loaded || home.blocked) {
+    console.log('❌ 首页未正常加载，停止导航测试。');
+    await closeBrowser(browser, context, page, video, 'spa-test');
+    process.exit(1);
+  }
 
   // Step 2: 点击问题
   const q = await page.$('a[href*="/question/"]');
   if (q) {
     console.log('  点击: %s', await q.getAttribute('href'));
+    const popupPromise = context.waitForEvent('page', {timeout:5000}).catch(() => null);
     await q.click();
+    const popup = await popupPromise;
+    if (popup) {
+      page = popup;
+      await page.waitForLoadState('domcontentloaded', {timeout:30000});
+    }
     await page.waitForTimeout(4000);
   } else {
     await page.goto('https://www.zhihu.com/question/266633366', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(4000);
   }
-  await check('问题详情页', 'spa-1-question');
+  const detail = await check('问题详情页', 'spa-1-question');
+  if (!detail.loaded || detail.blocked || !new URL(page.url()).pathname.startsWith('/question/')) {
+    console.log('❌ 详情页未加载，停止后续流程，避免在首页或错误页上误报通过。');
+    await closeBrowser(browser, context, page, video, 'spa-test');
+    process.exit(1);
+  }
 
   // Step 3: 展开折叠内容
   const btns = await page.$$('.RichContent-collapsedText, button:has-text("展开"), button:has-text("阅读全文"), span:has-text("展开")');
@@ -339,7 +364,12 @@ async function runSPA(video = false) {
   await check('页面底部', 'spa-5-bottom');
 
   // Step 7: 返回
-  await page.goBack({ timeout: 10000 }).catch(() => page.goto('https://www.zhihu.com'));
+  if (page !== homePage) {
+    await page.close();
+    page = homePage;
+  } else {
+    await page.goBack({ timeout: 10000 }).catch(() => page.goto('https://www.zhihu.com'));
+  }
   await page.waitForTimeout(4000);
   await check('返回首页', 'spa-6-back');
 

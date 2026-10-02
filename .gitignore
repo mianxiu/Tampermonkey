@@ -1,5 +1,7 @@
 node_modules/
 package-lock.json
 test/cookies.json
+test/auth-state.json
+不要上传cookies.txt
 test/screenshots/
 test/videos/

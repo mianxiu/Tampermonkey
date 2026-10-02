@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.23
+// @version      1.27
 // @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -126,6 +126,17 @@ padding-left:20px;
         .QuestionHeader{
         min-width:100%!important;
         }
+        .QuestionHeader-topics {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 6px;
+        }
+        .QuestionHeader-topics .Tag,
+        .QuestionHeader-topics .QuestionTopic {
+            width: auto !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+        }
         .QuestionRichText--expandable.QuestionRichText--collapsed{
         max-height:100%!important;
         padding-left:20px;
@@ -169,6 +180,173 @@ padding-left:20px;
             min-width: auto !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+        }
+
+        /* 桌面卡片的固定高度和按钮宽度不能一起套用全宽规则。 */
+        .ExploreSpecialCard {
+            height: auto !important;
+        }
+        .ExploreSpecialCard-banner {
+            height: auto !important;
+        }
+        .ExploreSpecialCard-banner img {
+            display: block;
+            width: 100% !important;
+        }
+        .ExploreSpecialCard-header {
+            width: auto !important;
+            margin: 0 16px !important;
+            padding: 16px 0 !important;
+            flex-wrap: wrap !important;
+            gap: 12px;
+        }
+        .ExploreSpecialCard-header > :first-child {
+            flex: 1 1 200px !important;
+            min-width: 0 !important;
+        }
+        .ExploreSpecialCard-title {
+            display: block !important;
+            max-width: 100% !important;
+            white-space: normal !important;
+            overflow-wrap: break-word !important;
+        }
+        .ExploreSpecialCard-followButton,
+        .ExploreFollowButton,
+        .ExploreSpecialCard-contentItem,
+        .ExploreCollectionCard-contentItem {
+            width: auto !important;
+        }
+        .ExploreSpecialCard-followButton {
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+        }
+        .ExploreHomePage-square > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+        .Search-container > [data-zhihu-search-sidebar] {
+            display: none !important;
+        }
+        /* 全站评论只保留阅读，隐藏旧版编辑器及 JS 标记的新版 hash 容器。 */
+        .CommentEditor,
+        .CommentEditorV2,
+        .CommentInput,
+        .CommentsV2-footer,
+        [data-zhihu-comment-composer] {
+            display: none !important;
+        }
+        html[data-zhihu-comments-open] {
+            overflow: hidden !important;
+        }
+        html[data-zhihu-comments-open] #toggle-header-btn {
+            display: none !important;
+        }
+        [data-zhihu-comment-overlay] {
+            position: fixed !important;
+            inset: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+        [data-zhihu-comment-shell] {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            transform: none !important;
+            background: white !important;
+            padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+                env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px) !important;
+        }
+        [data-zhihu-comment-fill] {
+            width: 100% !important;
+            height: 100% !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+        [data-zhihu-comment-scroll] {
+            flex: 1 1 0% !important;
+            min-height: 0 !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        [data-zhihu-comment-heading] {
+            flex-shrink: 0 !important;
+            padding-right: 56px !important;
+        }
+        [data-zhihu-comment-close] {
+            position: absolute !important;
+            left: auto !important;
+            bottom: auto !important;
+            transform: none !important;
+            top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+            right: calc(env(safe-area-inset-right, 0px) + 8px) !important;
+            width: 38px !important;
+            height: 38px !important;
+            color: #666 !important;
+            background: white !important;
+            z-index: 10 !important;
+        }
+        [data-zhihu-comment-close] svg {
+            color: #666 !important;
+            fill: currentColor !important;
+        }
+        /* 只隐藏 Header 本身，显示时让子元素恢复知乎原生布局。 */
+        html:not([data-zhihu-header-visible]) header.AppHeader,
+        html:not([data-zhihu-header-visible]) header[role="banner"] {
+            display: none !important;
+        }
+        .AppHeader-inner {
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        /* 小屏 Header 保留搜索入口，避免桌面导航挤压输入框。 */
+        @media (max-width: 768px) {
+            [data-zhihu-header-search-path] > :not([data-zhihu-header-search-path]):not(.SearchBar) {
+                display: none !important;
+            }
+            [data-zhihu-header-search-path] {
+                display: flex;
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                gap: 0 !important;
+            }
+            header[data-zhihu-header-search-path] {
+                padding: 0 82px 0 12px !important;
+            }
+            header .SearchBar {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
+            header .SearchBar > :not(.SearchBar-tool) {
+                display: none !important;
+            }
+            header .SearchBar-tool,
+            header .SearchBar-tool > div,
+            header .SearchBar-tool .Popover,
+            header .SearchBar-input {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                flex: 1 1 auto !important;
+            }
+            header .SearchBar-input input {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
         }
 
         /*搜索页*/
@@ -317,17 +495,6 @@ padding-bottom:0!important;
         }
 
         /* --- 隐藏无关元素 --- */
-        /* Header 相关 */
-        header.AppHeader,
-        header.AppHeader *,
-        header[role="banner"],
-        header[role="banner"] *,
-        .AppHeader,
-        .AppHeader *,
-        /* 导航栏 */
-        .AppHeader-nav, .AppHeader-tabs, .AppHeader-profile, .AppHeader-options,
-        .AppHeader-inner, .AppHeader-title,
-        nav[class*="AppHeader"], div[class*="AppHeader"],
         /* 写回答/文章按钮 */
         .WriteArea, .WriteArea-btn,
         [class*="WriteArea"],
@@ -464,8 +631,18 @@ padding-bottom:0!important;
 
     // 2. 强力修改 Header 显示属性
     function applyHeaderDisplay() {
+        document.documentElement.toggleAttribute('data-zhihu-header-visible', !isHeaderHidden);
+        // 评论弹层右上角是“默认/最新”排序，悬浮按钮避开该区域。
+        btn.style.right = document.querySelector('.RichContent--hotCommentExpanded')
+            ? 'calc(50% - 22px)' : '30px';
         const header = document.querySelector('header.AppHeader') || document.querySelector('header[role="banner"]');
         if (header) {
+            const searchBar = header.querySelector('.SearchBar');
+            if (searchBar) {
+                for (let parent = searchBar.parentElement; parent && header.contains(parent); parent = parent.parentElement) {
+                    parent.setAttribute('data-zhihu-header-search-path', '');
+                }
+            }
             if (isHeaderHidden) {
                 header.style.setProperty('display', 'none', 'important');
             } else {
@@ -481,13 +658,115 @@ padding-bottom:0!important;
         }
     }
 
+    // 新版评论编辑器、头像和发布工具栏不再具有稳定的容器类名。
+    // 用编辑器提示定位，隐藏最小的完整编辑区，不触碰搜索或 AI 追问输入。
+    function hideCommentComposers() {
+        const candidates = document.querySelectorAll(
+            '.InputLike.Editable, .CommentEditor, .CommentEditorV2, .CommentInput, '
+            + 'textarea[placeholder*="评论"], textarea[placeholder*="回复"], '
+            + 'input[placeholder*="评论"], input[placeholder*="回复"], [data-placeholder*="评论"], [data-placeholder*="回复"]'
+        );
+        for (const editor of candidates) {
+            if (editor.closest('[data-zhihu-comment-composer], .SearchBar')) continue;
+            const hint = editor.getAttribute('placeholder') || editor.getAttribute('data-placeholder')
+                || editor.querySelector('.public-DraftEditorPlaceholder-inner')?.textContent
+                || editor.textContent;
+            const known = editor.matches('.CommentEditor, .CommentEditorV2, .CommentInput');
+            if (!known && !/理性发言|友善互动|评论|^回复(?:\s|：|:)/.test((hint || '').trim())) continue;
+            let composer = editor;
+            for (let parent = editor.parentElement, depth = 0; parent && depth < 5; parent = parent.parentElement, depth++) {
+                if (parent.matches('body, #root, main, article, .AnswerItem, .RichContent')
+                    || parent.querySelector('.CommentContent, .CommentItem')) break;
+                const submit = [...parent.querySelectorAll('button')].filter(button =>
+                    /^(发布|发送|发表评论|评论)$/.test(button.textContent.trim())
+                );
+                if (submit.length) {
+                    submit.forEach(button => { button.disabled = true; });
+                    composer = parent;
+                    break;
+                }
+                // 折叠输入框常与头像一起放在一个小容器内，没有发布按钮。
+                if (parent.children.length <= 3 && parent.querySelector(':scope > .Avatar')) composer = parent;
+            }
+            const row = composer.parentElement;
+            if (row && row.children.length <= 3 && row.querySelector(':scope > .Avatar')
+                && !row.querySelector('.CommentContent, .CommentItem')) composer = row;
+            composer.setAttribute('data-zhihu-comment-composer', '');
+            if (composer.contains(document.activeElement)) document.activeElement.blur();
+        }
+    }
+
+    // 评论弹层外壳使用动态 hash；从稳定的评论正文和 Modal-content 定位。
+    function fullscreenComments() {
+        for (const content of document.querySelectorAll('.Modal-content')) {
+            if (!content.querySelector('.CommentContent, .CommentItem, .CommentsV2')) continue;
+            let overlay = content.parentElement;
+            for (let depth = 0; overlay && depth < 5; depth++, overlay = overlay.parentElement) {
+                if (getComputedStyle(overlay).position === 'fixed') break;
+            }
+            if (!overlay || getComputedStyle(overlay).position !== 'fixed') continue;
+            // 弹层打开前可能被通用扫描按旧视口宽度收窄；全屏接管后恢复这些声明。
+            for (const [el, properties] of overflowStyles) {
+                if (!overlay.contains(el)) continue;
+                for (const {name, value, priority} of properties) {
+                    if (value) el.style.setProperty(name, value, priority);
+                    else el.style.removeProperty(name);
+                }
+                overflowStyles.delete(el);
+            }
+            overlay.setAttribute('data-zhihu-comment-overlay', '');
+            let shell = content;
+            while (shell.parentElement && shell.parentElement !== overlay) shell = shell.parentElement;
+            shell.setAttribute('data-zhihu-comment-shell', '');
+            for (let el = content; el && el !== shell; el = el.parentElement) {
+                el.setAttribute('data-zhihu-comment-fill', '');
+            }
+            for (const panel of content.children) {
+                panel.setAttribute('data-zhihu-comment-fill', '');
+                // 不修改 display，保留知乎主评论/回复面板的原生切换。
+                for (const child of panel.children) {
+                    if (child.querySelector('.CommentContent, .CommentItem')
+                        && /auto|scroll/.test(getComputedStyle(child).overflowY)) {
+                        child.setAttribute('data-zhihu-comment-scroll', '');
+                    } else if (child === panel.firstElementChild) {
+                        child.setAttribute('data-zhihu-comment-heading', '');
+                    }
+                }
+            }
+            const close = [...shell.children].find(el => el.tagName === 'BUTTON');
+            if (close) {
+                close.setAttribute('data-zhihu-comment-close', '');
+                if (!close.getAttribute('aria-label')) close.setAttribute('aria-label', '关闭评论');
+            }
+        }
+        const open = [...document.querySelectorAll('[data-zhihu-comment-overlay]')]
+            .some(el => el.getBoundingClientRect().height > 0 && getComputedStyle(el).visibility !== 'hidden');
+        document.documentElement.toggleAttribute('data-zhihu-comments-open', open);
+    }
+
+    // 新版搜索侧栏只有 hash class；以稳定的热搜卡片定位其直接布局列。
+    function hideSearchSidebar() {
+        if (location.pathname !== '/search') return;
+        for (const card of document.querySelectorAll('.Search-container .HotSearchCard')) {
+            let column = card;
+            while (column.parentElement && !column.parentElement.matches('.Search-container')) {
+                column = column.parentElement;
+            }
+            if (column.parentElement?.matches('.Search-container') && column.previousElementSibling) {
+                column.setAttribute('data-zhihu-search-sidebar', '');
+            }
+        }
+    }
+
     // 3b. JS 端修复：扫描所有 right > viewport 的块级元素，强制限制到视口内
     //      专治 CSS-in-JS hash class wrapper（css-1gl8cva 等）——DOM 层级不可预测，CSS 选择器无法命中
     const fixOverflowingContainers = () => {
-        const vw = window.innerWidth;
+        hideSearchSidebar();
+        const vw = document.documentElement.clientWidth || window.innerWidth;
         const toFix = [];
         // 只看块级/弹性容器（忽略 inline/span/button 等内联元素，它们 follow 父宽度）
         for (const el of document.querySelectorAll('div, section, header, main, nav, article, footer, table, ul, ol')) {
+            if (el.closest('#zhihu-diag-panel, #toggle-header-btn, [data-zhihu-comment-overlay]')) continue;
             const r = el.getBoundingClientRect();
             // 跳过不可见、太小、已正确约束的元素
             if (r.width < 200) continue;
@@ -500,16 +779,28 @@ padding-bottom:0!important;
             // 计算它实际可用的最大宽度：视口 - 左偏移
             const available = vw - r.left;
             if (available < 100) continue; // 太窄，可能是定位异常
-            toFix.push({ el, overflow, width: r.width, available });
+            let depth = 0;
+            for (let parent = el.parentElement; parent; parent = parent.parentElement) depth++;
+            toFix.push({ el, overflow, depth });
         }
         // 按溢出量从大到小排列，先修外层再修内层（避免修完外层后内层自动正确）
-        toFix.sort((a, b) => b.overflow - a.overflow);
+        toFix.sort((a, b) => a.depth - b.depth || b.overflow - a.overflow);
         // 只修溢出量 >20px 的前 15 个（避免过度干涉，内层元素会随外层一起修正）
         const fixed = [];
-        for (const item of toFix.slice(0, 15)) {
-            if (item.overflow < 20) break;
+        for (const item of toFix) {
+            if (fixed.length >= 15) break;
+            // 外层修复后，重新测量内层，避免用旧坐标重复压缩。
+            const rect = item.el.getBoundingClientRect();
+            const available = vw - Math.max(0, rect.left);
+            if (rect.right - vw < 20 || available < 100) continue;
+            if (!overflowStyles.has(item.el)) {
+                overflowStyles.set(item.el, overflowProperties.map(name => ({
+                    name, value: item.el.style.getPropertyValue(name),
+                    priority: item.el.style.getPropertyPriority(name),
+                })));
+            }
             item.el.style.setProperty('width', '100%', 'important');
-            item.el.style.setProperty('max-width', item.available + 'px', 'important');
+            item.el.style.setProperty('max-width', available + 'px', 'important');
             item.el.style.setProperty('min-width', '0', 'important');
             item.el.style.setProperty('margin-left', '0', 'important');
             item.el.style.setProperty('margin-right', '0', 'important');
@@ -522,6 +813,25 @@ padding-bottom:0!important;
             console.log('[知乎适配] JS 修复 ' + fixed.length + ' 个溢出容器: ' + fixed.join(', '));
         }
     };
+
+    const overflowProperties = ['width', 'max-width', 'min-width', 'margin-left', 'margin-right'];
+    const overflowStyles = new Map();
+    let overflowTimer;
+    const scheduleOverflowFix = (delay = 300) => {
+        clearTimeout(overflowTimer);
+        overflowTimer = setTimeout(fixOverflowingContainers, delay);
+    };
+    window.addEventListener('resize', () => {
+        for (const [el, properties] of overflowStyles) {
+            if (!el.isConnected) continue;
+            for (const {name, value, priority} of properties) {
+                if (value) el.style.setProperty(name, value, priority);
+                else el.style.removeProperty(name);
+            }
+        }
+        overflowStyles.clear();
+        scheduleOverflowFix();
+    });
 
     // 3c. 强制 viewport meta：让布局视口 = 设备宽度，配合 CSS 的 width:100%
     //    （SPA 切换或桌面版模板可能没有/替换此 meta，需要持续兜底）
@@ -550,25 +860,31 @@ padding-bottom:0!important;
         (document.head || document.documentElement).appendChild(style);
         enforceViewport();
         // CSS-in-JS 渲染可能晚于注入，延迟 300ms 后 JS 修复一次
-        setTimeout(fixOverflowingContainers, 300);
+        scheduleOverflowFix();
     };
 
     // 4. 创建按钮
     const btn = document.createElement('div');
     btn.id = 'toggle-header-btn';
-    btn.innerHTML = 'H';
+    btn.textContent = '💊';
+    let clickTimer;
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
-        isHeaderHidden = !isHeaderHidden;
-        btn.innerHTML = isHeaderHidden ? '💊' : 'H';
-        btn.style.background = isHeaderHidden ? '#8590a6' : '#0084ff';
-        applyHeaderDisplay();
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => {
+            isHeaderHidden = !isHeaderHidden;
+            btn.textContent = isHeaderHidden ? '💊' : 'H';
+            btn.style.background = isHeaderHidden ? '#8590a6' : '#0084ff';
+            applyHeaderDisplay();
+            scheduleOverflowFix();
+        }, 300);
     });
 
     // 真机诊断：双击悬浮按钮，直接在当前页面显示诊断面板（无需外接 Mac/Safari）
     btn.addEventListener('dblclick', (e) => {
         e.preventDefault();
+        clearTimeout(clickTimer);
         showDiagnosticPanel();
     });
 
@@ -581,7 +897,9 @@ padding-bottom:0!important;
         }
         enforceViewport();
         applyHeaderDisplay();
-        setTimeout(fixOverflowingContainers, 500);
+        hideCommentComposers();
+        fullscreenComments();
+        scheduleOverflowFix(500);
     };
 
     if (document.readyState === 'loading') {
@@ -592,11 +910,10 @@ padding-bottom:0!important;
 
     // 5. 溢出诊断（双击悬浮按钮弹出面板 + 可下载 JSON / 复制）
     const showDiagnosticPanel = () => {
-        // 如果面板已存在，切换显示
+        // 再次打开时重新采集，不能沿用上一页或上一次的快照。
         const existing = document.getElementById('zhihu-diag-panel');
         if (existing) {
-            existing.style.display = existing.style.display === 'none' ? 'block' : 'none';
-            return;
+            existing.remove();
         }
 
         const vw = window.innerWidth;
@@ -606,6 +923,7 @@ padding-bottom:0!important;
         // ── 扫描溢出元素（完整 CSS 属性，用于 JSON 导出） ──
         const found = [];
         for (const el of document.querySelectorAll('*')) {
+            if (el.closest('#toggle-header-btn')) continue;
             const r = el.getBoundingClientRect();
             if (r.width > 30 && r.right > vw + 1) {
                 const s = getComputedStyle(el);
@@ -640,7 +958,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.23',
+            version: '1.27',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),
@@ -815,8 +1133,14 @@ padding-bottom:0!important;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             applyHeaderDisplay();
+            hideCommentComposers();
+            fullscreenComments();
             enforceViewport();
             fixOverflowingContainers();
+            // 丢弃 SPA 已移除节点的引用。
+            for (const el of overflowStyles.keys()) {
+                if (!el.isConnected) overflowStyles.delete(el);
+            }
             if (!document.getElementById('custom-layout-css')) {
                 injectCss();
             }
