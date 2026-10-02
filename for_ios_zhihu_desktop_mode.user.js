@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.28
+// @version      1.30
 // @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -31,6 +31,14 @@
         }
         *, *::before, *::after {
             box-sizing: border-box !important;
+        }
+        /* 答案容器在首次绘制前标记，不等延迟扫描后才改变正文行宽。 */
+        [data-zhihu-answer-layout] {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
         }
 
         /* 所有媒体元素限制最大宽度 */
@@ -388,6 +396,18 @@ left:auto!important;
 padding:0px!important;
 margin:0!important;
 }
+/* 知乎会为答案操作栏加 Sticky/is-fixed；保留原节点，让它随正文滚动。 */
+.ContentItem-actions,
+.RichContent-actions {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    z-index: auto !important;
+    box-shadow: none !important;
+}
 .HotLanding-contentItem:not(:last-child){
 padding-bottom:5px!important;
 }
@@ -627,6 +647,7 @@ padding-bottom:0!important;
             z-index: 2147483647;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             font-size: 18px;
+            opacity: 0.2;
             transition: background-color 0.15s;
             user-select: none;
         }
@@ -765,6 +786,31 @@ padding-bottom:0!important;
             }
             if (column.parentElement?.matches('.Search-container') && column.previousElementSibling) {
                 column.setAttribute('data-zhihu-search-sidebar', '');
+            }
+        }
+    }
+
+    // 沿答案祖先链在首次绘制前建立约束，无需读取布局。
+    function stabilizeAnswerLayout() {
+        if (!location.pathname.startsWith('/question/')) return;
+        const seen = new Set();
+        for (const seed of [...document.querySelectorAll('.AnswerItem, .QuestionHeader')].slice(0, 8)) {
+            if (seed.closest('.Modal-content, [role="dialog"]')) continue;
+            for (let el = seed, depth = 0; el && el.id !== 'root' && depth < 16; el = el.parentElement, depth++) {
+                if (seen.has(el)) break;
+                seen.add(el);
+                if (!el.matches('div, section, main, article')) continue;
+                if (!el.hasAttribute('data-zhihu-answer-layout')) {
+                    const original = overflowStyles.get(el);
+                    if (original) {
+                        for (const {name, value, priority} of original) {
+                            if (value) el.style.setProperty(name, value, priority);
+                            else el.style.removeProperty(name);
+                        }
+                        overflowStyles.delete(el);
+                    }
+                    el.setAttribute('data-zhihu-answer-layout', '');
+                }
             }
         }
     }
@@ -928,6 +974,7 @@ padding-bottom:0!important;
         applyHeaderDisplay();
         hideCommentComposers();
         fullscreenComments();
+        stabilizeAnswerLayout();
         scheduleOverflowFix();
     };
 
@@ -987,7 +1034,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.28',
+            version: '1.30',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),
@@ -1159,6 +1206,10 @@ padding-bottom:0!important;
     // 6. MutationObserver + 防抖（解决 SPA 跳转）
     let debounceTimer;
     const observer = new MutationObserver((records) => {
+        // 答案先约束，再等待防抖维护，避免已显示的正文延迟换行。
+        if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1))) {
+            stabilizeAnswerLayout();
+        }
         // 文本流更新与脚本自己的按钮/诊断 DOM 不需要重扫全站布局。
         const relevant = records.some(record => {
             const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
