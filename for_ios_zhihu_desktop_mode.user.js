@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎全站自适应
 // @namespace    http://tampermonkey.net/
-// @version      1.31
+// @version      1.32
 // @description  桌面版网页适配手机宽度。JS 端实时修复溢出容器（扫描 rect.right>viewport 的元素直接 setProperty）
 // @author       mianxiu
 // @match        *://*.zhihu.com/*
@@ -411,16 +411,42 @@ margin:0!important;
     box-shadow: none !important;
 }
 .RichContent-actions {
-    flex-wrap: wrap !important;
-    gap: 6px;
+    flex-wrap: nowrap !important;
+    gap: 2px;
+    align-items: center !important;
+    white-space: nowrap !important;
+}
+.RichContent-actions .VoteButton {
+    padding: 0 4px !important;
+    min-width: 0 !important;
+    width: auto !important;
+    height: 30px !important;
+    line-height: 28px !important;
+}
+.RichContent-actions .VoteButton--down {
+    padding: 0 4px !important;
+    margin-left: 2px !important;
+}
+.RichContent-actions .ContentItem-action {
+    margin-left: 0 !important;
+    flex: none !important;
 }
 .RichContent-actions .ContentItem-rightButton:not(.ContentItem-expandButton) {
     margin-left: auto !important;
-    padding: 6px 14px !important;
+    padding: 2px 4px !important;
+    line-height: 22px !important;
     border-radius: 999px !important;
     background: #f0f6ff !important;
     color: #1772f6 !important;
     flex: none !important;
+}
+@media (max-width: 480px) {
+    .RichContent-actions button { font-size: 12px !important; }
+    .RichContent-actions .ContentItem-action svg {
+        width: 14px !important;
+        height: 14px !important;
+        flex: none !important;
+    }
 }
 .HotLanding-contentItem:not(:last-child){
 padding-bottom:5px!important;
@@ -1114,7 +1140,7 @@ padding-bottom:0!important;
         // ── 诊断数据 ──
         const data = {
             timestamp: new Date().toISOString(),
-            version: '1.31',
+            version: '1.32',
             url: location.href,
             pathname: location.pathname,
             hasRoot: !!document.getElementById('root'),

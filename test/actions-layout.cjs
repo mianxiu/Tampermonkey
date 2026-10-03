@@ -12,6 +12,12 @@ const {chromium}=require('playwright');const fs=require('fs');const path=require
   assert.equal(top.iconOpacity,'0.2');assert(top.bars.length>0,'Answer actions must load');assert(top.bars.every(chain=>chain[0].position==='static'),'Actions must remain in normal flow');assert(top.bars[0][0].rect.top>852,'Long answer actions must not float in viewport');
   await page.evaluate(()=>window.scrollTo(0,500));const scrolled=await record('answer-scrolled');assert(Math.abs(scrolled.bars[0][0].rect.top-(top.bars[0][0].rect.top-scrolled.scrollY))<2,'Actions must move with document scroll');
   await page.locator('.ContentItem-actions').first().scrollIntoViewIfNeeded();const bottom=await record('answer-actions-visible');assert(bottom.bars[0][0].rect.top>=0&&bottom.bars[0][0].rect.bottom<=852,'Actions remain accessible below answer');
+  for(const width of [393,375]){
+   await page.setViewportSize({width,height:852});await page.waitForTimeout(500);await page.locator('.ContentItem-actions').first().scrollIntoViewIfNeeded();
+   const row=await page.locator('.ContentItem-actions').first().evaluate(el=>{const vote=el.querySelector('.VoteButton').getBoundingClientRect();const collapse=el.querySelector('.ContentItem-rightButton:not(.ContentItem-expandButton)').getBoundingClientRect();const rect=el.getBoundingClientRect();return {vote:vote.toJSON(),collapse:collapse.toJSON(),rect:rect.toJSON()};});
+   console.log(JSON.stringify({width,voteWidth:row.vote.width,collapseWidth:row.collapse.width,rowWidth:row.rect.width}));
+   assert(Math.abs((row.vote.y+row.vote.height/2)-(row.collapse.y+row.collapse.height/2))<2,'Vote and collapse must stay on one line');assert(row.collapse.right<=row.rect.right+1,'Collapse must fit action row');await record('single-row-'+width);
+  }
   await page.locator('#toggle-header-btn').click();await page.waitForTimeout(650);assert(await page.locator('.SearchBar input').first().isVisible(),'Faint search button stays usable');
   console.log('PASS: faint search button; nonfloating actions move with scroll and remain accessible; no votes sent');
  }finally{await browser.close();}
